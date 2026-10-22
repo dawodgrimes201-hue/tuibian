@@ -122,77 +122,109 @@ const Beep = {
   finish() { this.tone(660, 0.12, 0.18); setTimeout(() => this.tone(990, 0.16, 0.18), 140); }
 };
 
-/* ---------- 舒缓背景音乐（实时合成，不用下载音频） ---------- */
+/* ---------- 自然声（风 / 雨 / 海浪，实时合成，不用下载音频） ---------- */
 const Music = {
   playing: false,
-  mode: 'calm',
+  mode: 'rain',
   master: null,
   nodes: [],
-  timer: null,
-  volume: 0.07,
+  timers: [],
+  volume: 0.12,
+  _noise: null,
 
   ctx() { Beep.unlock(); return Beep.ctx; },
 
-  chords(mode) {
-    const beat = [[110.00, 220.00, 261.63, 329.63],   // Am
-                  [87.31, 174.61, 220.00, 261.63],    // F
-                  [130.81, 196.00, 261.63, 329.63],   // C
-                  [98.00, 196.00, 246.94, 293.66]];   // G
-    const calm = [[110.00, 164.81, 261.63, 329.63],
-                  [87.31, 130.81, 220.00, 261.63],
-                  [98.00, 146.83, 246.94, 293.66],
-                  [73.42, 146.83, 220.00, 293.66]];
-    return mode === 'calm' ? calm : beat;
+  noiseBuffer(ctx) {
+    if (this._noise && this._noise.sampleRate === ctx.sampleRate) return this._noise;
+    const len = Math.floor(ctx.sampleRate * 2);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    this._noise = buf;
+    return buf;
+  },
+
+  noiseLayer(out, opt) {
+    const ctx = this.ctx();
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer(ctx);
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = opt.type || 'lowpass';
+    f.frequency.value = opt.freq || 500;
+    f.Q.value = opt.q == null ? 0.7 : opt.q;
+    const g = ctx.createGain();
+    g.gain.value = opt.gain || 0.2;
+    src.connect(f); f.connect(g); g.connect(out);
+    src.start();
+    this.nodes.push(src, f, g);
+    return { src, f, g };
+  },
+
+  lfo(param, rate, depth, base) {
+    const ctx = this.ctx();
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    osc.frequency.value = rate;
+    amp.gain.value = depth;
+    param.value = base;
+    osc.connect(amp); amp.connect(param);
+    osc.start();
+    this.nodes.push(osc, amp);
+    return osc;
   },
 
   start(mode) {
-    if (this.playing) this.stop();
+    this.stop();
     const ctx = this.ctx();
     if (!ctx) return;
-    this.mode = mode || 'calm';
+    this.mode = mode || 'rain';
     this.playing = true;
     const master = ctx.createGain();
     master.gain.value = 0;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = this.mode === 'calm' ? 900 : 1300;
-    filter.Q.value = 0.4;
-    master.connect(filter); filter.connect(ctx.destination);
+    master.connect(ctx.destination);
     this.master = master;
-    master.gain.linearRampToValueAtTime(this.volume, ctx.currentTime + 2.5);
+    master.gain.linearRampToValueAtTime(this.volume, ctx.currentTime + 2);
 
-    const prog = this.chords(this.mode);
-    const chordDur = this.mode === 'calm' ? 9 : 7;
-    let ci = 0;
-    const playChord = () => {
-      if (!this.playing) return;
-      const ctx2 = this.ctx();
-      const chord = prog[ci % prog.length]; ci++;
-      const t = ctx2.currentTime;
-      chord.forEach((f, idx) => {
-        for (let d = 0; d < 3; d++) {
-          const o = ctx2.createOscillator();
-          const g = ctx2.createGain();
-          o.type = idx === 0 ? 'sine' : 'triangle';
-          o.frequency.value = f * (1 + (d - 1) * 0.0032);
-          const v = idx === 0 ? 0.16 : 0.09;
+    if (this.mode === 'rain') {
+      const hiss = this.noiseLayer(master, { type: 'highpass', freq: 1100, gain: 0.26 });
+      this.lfo(hiss.g.gain, 0.13, 0.05, 0.26);
+      this.noiseLayer(master, { type: 'lowpass', freq: 320, gain: 0.12 });
+      this.timers.push(setInterval(() => {
+        if (!this.playing) return;
+        if (Math.random() > 0.45) return;
+        try {
+          const c = this.ctx();
+          const t = c.currentTime;
+          const o = c.createOscillator();
+          const g = c.createGain();
+          o.type = 'sine';
+          o.frequency.value = 1200 + Math.random() * 1800;
           g.gain.setValueAtTime(0.0001, t);
-          g.gain.linearRampToValueAtTime(v, t + 2.2);
-          g.gain.linearRampToValueAtTime(0.0001, t + chordDur + 1.6);
+          g.gain.linearRampToValueAtTime(0.04 + Math.random() * 0.03, t + 0.008);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18 + Math.random() * 0.2);
           o.connect(g); g.connect(master);
-          o.start(t); o.stop(t + chordDur + 1.8);
-          this.nodes.push(o);
-        }
-      });
-      if (this.nodes.length > 120) this.nodes = this.nodes.slice(-40);
-    };
-    playChord();
-    this.timer = setInterval(playChord, chordDur * 1000 + 200);
+          o.start(t); o.stop(t + 0.5);
+        } catch (e) {}
+      }, 220));
+    } else if (this.mode === 'wind') {
+      const band = this.noiseLayer(master, { type: 'bandpass', freq: 480, q: 1.1, gain: 0.22 });
+      this.lfo(band.f.frequency, 0.05, 220, 480);
+      this.lfo(band.g.gain, 0.07, 0.10, 0.20);
+      this.noiseLayer(master, { type: 'lowpass', freq: 180, gain: 0.10 });
+    } else { // waves
+      const body = this.noiseLayer(master, { type: 'lowpass', freq: 520, gain: 0.22 });
+      this.lfo(body.g.gain, 0.09, 0.14, 0.20);
+      const spray = this.noiseLayer(master, { type: 'highpass', freq: 2600, gain: 0.05 });
+      this.lfo(spray.g.gain, 0.09, 0.04, 0.05);
+      this.noiseLayer(master, { type: 'lowpass', freq: 140, gain: 0.08 });
+    }
   },
 
   stop() {
     this.playing = false;
-    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    this.timers.forEach(t => clearInterval(t));
+    this.timers = [];
     try {
       if (this.master && Beep.ctx) {
         this.master.gain.cancelScheduledValues(Beep.ctx.currentTime);
@@ -202,14 +234,14 @@ const Music = {
     const nodes = this.nodes.slice();
     this.nodes = [];
     setTimeout(() => {
-      nodes.forEach(o => { try { o.stop(); } catch (e) {} });
+      nodes.forEach(n => { try { n.stop && n.stop(); } catch (e) {} });
       try { this.master && this.master.disconnect(); } catch (e) {}
       this.master = null;
     }, 1400);
   },
 
   setVolume(v) {
-    this.volume = Math.max(0, Math.min(0.3, v));
+    this.volume = Math.max(0, Math.min(0.4, v));
     try { if (this.master) this.master.gain.value = this.volume; } catch (e) {}
   }
 };
@@ -238,6 +270,7 @@ function buildTimeline(wid, variant) {
   const w = WORKOUTS[wid];
   const v = Object.assign({ mode: 'full' }, variant || {});
   const light = v.mode === 'light';
+  const prog = v.prog || 0;
   const out = [];
   const say = t => out.push({ k: 'say', t });
   if (!w) return out;
@@ -260,23 +293,30 @@ function buildTimeline(wid, variant) {
       const ex = EX[b.ex];
       let sets = b.sets;
       let rest = b.rest;
+      let secs = b.secs + (prog >= 2 ? 10 : prog >= 1 ? 5 : 0);
+      if (prog >= 2 && sets >= 2) sets += 1;
       if (light) { sets = Math.max(1, sets - 1); rest = rest + 10; }
       const sides = b.sides || 1;
-      say(`${ex.n}，${cnNum(sets)} 组，每组 ${cnNum(b.secs)} 秒${sides > 1 ? '，每侧' : ''}。${ex.cue}`);
+      say(`${ex.n}，${cnNum(sets)} 组，每组 ${cnNum(secs)} 秒${sides > 1 ? '，每侧' : ''}。${ex.cue}`);
       for (let s = 0; s < sets; s++) {
         for (let side = 0; side < sides; side++) {
           if (sides > 1) say(side === 0 ? '左侧，开始。' : '换另一侧。');
           else say(s > 0 ? `${SET_CN[s] || '再来一组'}，开始。` : '开始。');
           const cues = [];
-          if (b.secs >= 25) cues.push({ at: Math.floor(b.secs / 2), t: '一半。' });
-          if (b.secs >= 15) cues.push({ at: b.secs - 10, t: '最后十秒。' });
-          out.push({ k: 'work', secs: b.secs, label: `${ex.n} · ${SET_CN[s] || '第' + (s + 1) + '组'}${sides > 1 ? (side === 0 ? '（左）' : '（右）') : ''}`, cues });
+          if (secs >= 25) cues.push({ at: Math.floor(secs / 2), t: '一半。' });
+          if (secs >= 15) cues.push({ at: secs - 10, t: '最后十秒。' });
+          out.push({ k: 'work', secs, label: `${ex.n} · ${SET_CN[s] || '第' + (s + 1) + '组'}${sides > 1 ? (side === 0 ? '（左）' : '（右）') : ''}`, cues });
         }
         if (s < sets - 1 && rest > 0) {
           say(`休息 ${cnNum(rest)} 秒。`);
           out.push({ k: 'rest', secs: rest, label: '休息' });
         }
       }
+      return;
+    }
+    if (b.k === 'badu') {
+      say(`${b.name}，${cnNum(b.secs)} 秒。${b.cue}`);
+      out.push({ k: 'work', secs: b.secs, label: b.name, cues: [{ at: Math.max(5, b.secs - 10), t: '最后十秒。' }] });
       return;
     }
     if (b.k === 'cool') {

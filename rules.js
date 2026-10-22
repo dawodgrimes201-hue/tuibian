@@ -73,6 +73,8 @@ function todayPlan(state, date) {
   const sh = sleepHours(c);
   let wid = DAY_WORKOUT[wd];
   let mode = 'full';
+  const weekNo = Math.floor(R.days(APP.start, date) / 7) + 1;
+  const prog = weekNo >= 5 ? 2 : weekNo >= 3 ? 1 : 0;
   let why = '';
   const notes = [];
   const dietNotes = [];
@@ -102,7 +104,7 @@ function todayPlan(state, date) {
   }
 
   const w = WORKOUTS[wid];
-  const minutes = estimateMinutes(wid, { mode });
+  const minutes = estimateMinutes(wid, { mode, prog });
 
   /* 饮食 */
   const mealPick = i => ({
@@ -118,8 +120,15 @@ function todayPlan(state, date) {
   if (sh !== null && sh < 6.3) dietNotes.push(...DIET_RULES.sleep);
   if (cal.bmi > 24) dietNotes.push(...DIET_RULES.lose);
 
+  const morning = {
+    wid: MORNING_WORKOUT,
+    title: WORKOUTS[MORNING_WORKOUT].title,
+    minutes: estimateMinutes(MORNING_WORKOUT, { mode: 'full', prog: 0 }),
+    done: !!(c.done && c.done.morning)
+  };
+
   return {
-    date, wid, title: w.title, minutes, mode, why, notes,
+    date, wid, title: w.title, minutes, mode, prog, weekNo, morning, why, notes,
     dietNotes: [...new Set(dietNotes)],
     nutrition: { target: cal.target, protein: cal.protein, bmi: cal.bmi, meals },
     level: mode === 'light' ? 'yellow' : 'green',

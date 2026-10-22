@@ -100,7 +100,7 @@
   function renderAll() {
     today = R.today();
     plan = todayPlan(state, today);
-    renderHero(); renderStatus(); renderThree(); renderSide(); renderTip();
+    renderHero(); renderStatus(); renderThree(); renderMorning(); renderSide(); renderTip();
     renderTrain(); renderDiet(); renderBadge(); renderMe();
   }
 
@@ -221,6 +221,18 @@
     $('#btnSleep').onclick = startSleep;
   }
 
+  function renderMorning() {
+    const el = $('#morningCard');
+    if (!el) return;
+    const m = plan.morning;
+    el.innerHTML = `<div class="card">
+      <h3><span>晨间 · 八段锦</span><span class="more">${m.done ? '今天做完了' : '约 ' + m.minutes + ' 分钟'}</span></h3>
+      <div class="hint" style="margin-bottom:8px">八式，每式约一分钟，跟着口令和呼吸做。早上做最好，晚上想放松也可以。</div>
+      <button class="btn ghost" id="btnMorning">${m.done ? '再做一次' : '开始八段锦'}</button>
+    </div>`;
+    $('#btnMorning').onclick = startMorning;
+  }
+
   function renderSide() {
     const c = check();
     const items = [
@@ -254,8 +266,19 @@
   function startTraining() {
     const w = WORKOUTS[plan.wid];
     meta = { type: 'train', wid: plan.wid };
-    openPlayer(w.title, plan.wid, { mode: plan.mode }, state.settings.music ? w.music : null);
+    openPlayer(w.title, plan.wid, { mode: plan.mode, prog: plan.prog }, state.settings.music ? resolveSound(w.music) : null);
   }
+  function resolveSound(def) {
+    const s = state.settings.sound;
+    return (!s || s === 'auto') ? (def || 'waves') : s;
+  }
+
+  function startMorning() {
+    const m = WORKOUTS[plan.morning.wid];
+    meta = { type: 'morning', wid: plan.morning.wid };
+    openPlayer(m.title, plan.morning.wid, { mode: 'full', prog: 0 }, state.settings.music ? resolveSound(m.music) : null);
+  }
+
   function startSleep() {
     meta = { type: 'sleep' };
     openPlayer('睡前 3 分钟', sleepTimeline(), null, state.settings.music ? 'calm' : null);
@@ -292,6 +315,10 @@
     } else if (m.type === 'sleep') {
       c.done.sleep = Date.now();
       save(); toast('今天到这，睡个好觉');
+    } else if (m.type === 'morning') {
+      c.done.morning = Date.now();
+      state.sessions.push({ date: today, wid: m.wid, ts: Date.now() });
+      save(); toast('八段锦做完了');
     }
     checkNewBadges();
     setTimeout(() => { closePlayer(); renderAll(); }, 800);
@@ -537,6 +564,13 @@
           <button class="chip" data-p="female">女声</button>
           <button class="chip" data-p="male">男声</button>
         </div></div>
+      <div class="q"><div class="lab"><span>背景声音</span></div>
+        <div class="chips" id="soundChips">
+          <button class="chip" data-s="auto">自动</button>
+          <button class="chip" data-s="rain">雨</button>
+          <button class="chip" data-s="wind">风</button>
+          <button class="chip" data-s="waves">海浪</button>
+        </div></div>
       <div class="row-item">
         <div class="txt"><div class="t1">背景音乐</div><div class="t2">走路、拉伸时更明显</div></div>
         <div class="switch ${state.settings.music ? 'on' : ''}" id="swMusic"></div>
@@ -575,6 +609,14 @@
       $('#swVoice').classList.toggle('on', state.settings.voice);
       save();
     };
+    $$('#soundChips .chip').forEach(b => {
+      b.classList.toggle('on', (state.settings.sound || 'auto') === b.dataset.s);
+      b.onclick = () => {
+        state.settings.sound = b.dataset.s;
+        save(); renderMe();
+        if (Music.playing) { Music.start(resolveSound('waves')); }
+      };
+    });
     $('#swMusic').onclick = () => {
       state.settings.music = !state.settings.music;
       $('#swMusic').classList.toggle('on', state.settings.music);

@@ -35,7 +35,7 @@ const EX = {
    k: warmup / ex / cool / walk */
 const WORKOUTS = {
   lower: {
-    title: '下肢 + 推', short: '力量 A', minutes: 25, music: 'beat', day: 1,
+    title: '下肢 + 推', short: '力量 A', minutes: 25, music: 'wind', day: 1,
     intro: '今天练下肢和推，大概二十五分钟。全程跟着时间走，动作慢一点，姿势比对重要。',
     blocks: [
       { k: 'warmup', name: '原地踏步', secs: 120, ex: 'march' },
@@ -49,7 +49,7 @@ const WORKOUTS = {
     ]
   },
   walk: {
-    title: '快走', short: '快走', minutes: 35, music: 'calm', day: 2, kind: 'walk',
+    title: '快走', short: '快走', minutes: 35, music: 'waves', day: 2, kind: 'walk',
     intro: '今天快走三十五分钟。先慢走五分钟热身，然后保持能说话的强度。',
     blocks: [
       { k: 'walk', secs: 300, name: '慢走热身', cues: [{ at: 120, t: '保持轻松，让身体热起来。' }] },
@@ -61,7 +61,7 @@ const WORKOUTS = {
     ]
   },
   upper: {
-    title: '拉 + 核心', short: '力量 B', minutes: 25, music: 'beat', day: 3,
+    title: '拉 + 核心', short: '力量 B', minutes: 25, music: 'wind', day: 3,
     intro: '今天练背和核心，大概二十五分钟。家里没器械也没关系，用书包或者水瓶都能代替。',
     blocks: [
       { k: 'warmup', name: '原地踏步', secs: 90, ex: 'march' },
@@ -75,7 +75,7 @@ const WORKOUTS = {
     ]
   },
   walk2: {
-    title: '快走', short: '快走', minutes: 30, music: 'calm', day: 4, kind: 'walk',
+    title: '快走', short: '快走', minutes: 30, music: 'waves', day: 4, kind: 'walk',
     intro: '今天快走三十分钟。强度是能说话、不能唱歌。',
     blocks: [
       { k: 'walk', secs: 300, name: '慢走热身', cues: [] },
@@ -86,7 +86,7 @@ const WORKOUTS = {
     ]
   },
   full: {
-    title: '全身', short: '力量 C', minutes: 25, music: 'beat', day: 5,
+    title: '全身', short: '力量 C', minutes: 25, music: 'wind', day: 5,
     intro: '今天练全身，大概二十五分钟。动作不快，做稳。',
     blocks: [
       { k: 'warmup', name: '原地踏步', secs: 90, ex: 'march' },
@@ -100,7 +100,7 @@ const WORKOUTS = {
     ]
   },
   longwalk: {
-    title: '长走', short: '长走', minutes: 50, music: 'calm', day: 6, kind: 'walk',
+    title: '长走', short: '长走', minutes: 50, music: 'waves', day: 6, kind: 'walk',
     intro: '今天长走五十分钟。找个有点起伏的路线，每十五分钟喝两口水。',
     blocks: [
       { k: 'walk', secs: 300, name: '慢走热身', cues: [] },
@@ -112,7 +112,7 @@ const WORKOUTS = {
     ]
   },
   stretch: {
-    title: '拉伸 + 腰背', short: '恢复', minutes: 12, music: 'calm', day: 0,
+    title: '拉伸 + 腰背', short: '恢复', minutes: 12, music: 'rain', day: 0,
     intro: '今天不练力量，做十二分钟拉伸和腰背，让身体恢复。',
     blocks: [
       { k: 'warmup', name: '猫牛', secs: 60, ex: 'birddog' },
@@ -124,6 +124,25 @@ const WORKOUTS = {
     ]
   }
 };
+
+/* 晨间八段锦（按时间，每式约 1 分钟） */
+WORKOUTS.baduanjin = {
+  title: '八段锦', short: '晨间', minutes: 12, music: 'rain', morning: true,
+  intro: '早上好。八段锦，八式，大概十二分钟。动作不用大，跟着呼吸，慢慢来。',
+  blocks: [
+    { k: 'badu', name: '起势', secs: 45, cue: '两脚与肩同宽，双手在腹前抱圆，呼吸放长。' },
+    { k: 'badu', name: '两手托天理三焦', secs: 60, cue: '双手交叉从胸前上托，掌心向上，手臂伸直，脚跟微微离地，吸气上托，呼气放下。' },
+    { k: 'badu', name: '左右开弓似射雕', secs: 70, cue: '马步下蹲，一手拉弓一手推，眼神跟着推出去的手，左右各一次算一轮，做三轮。' },
+    { k: 'badu', name: '调理脾胃须单举', secs: 60, cue: '一手向上撑，一手向下按，把身体拉长，吸气撑起，呼气还原，左右各做两轮。' },
+    { k: 'badu', name: '五劳七伤往后瞧', secs: 60, cue: '站直，头向后转看斜后方，肩膀放松，慢慢转回来，左右各做四轮。' },
+    { k: 'badu', name: '摇头摆尾去心火', secs: 70, cue: '马步，上身前俯，头带身体划圆，动作慢，腰不舒服就做得小一点。' },
+    { k: 'badu', name: '两手攀足固肾腰', secs: 60, cue: '手扶后腰，慢慢下按，或者脚尖回勾向前够，不用勉强碰到地。' },
+    { k: 'badu', name: '攒拳怒目增气力', secs: 60, cue: '马步，握拳，吸气收拳，呼气出拳，眼睛跟着拳头，左右各做四轮。' },
+    { k: 'badu', name: '背后七颠百病消', secs: 45, cue: '脚跟并拢，提起脚后跟再轻轻落下，一起一落，七次。' },
+    { k: 'badu', name: '收势', secs: 45, cue: '双手在腹前抱圆，呼吸放长，站一分钟，再慢慢睁开眼。' }
+  ]
+};
+const MORNING_WORKOUT = 'baduanjin';
 
 /* 轻量版：每个动作少一组，休息多 10 秒 */
 const LIGHT_DELTA = { sets: -1, rest: 10 };
