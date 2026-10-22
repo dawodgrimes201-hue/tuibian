@@ -19,12 +19,15 @@
 <div class="app">
 
   <header class="top">
-    <div class="brand"><span class="logo">蜕</span>蜕变<small>语音教练</small></div>
+    <div class="brand"><span class="logo">蜕</span>蜕变<small>六维</small></div>
+    <div class="slogan">六条线，一起往前挪。</div>
     <div class="topright" id="topDate">—</div>
   </header>
 
   <section id="tab-today" class="tab on">
     <div class="hero" id="hero"></div>
+    <div id="sixGrid"></div>
+    <div id="coupleCard"></div>
     <div id="statusCard"></div>
     <div id="threeCard"></div>
     <div id="morningCard"></div>
@@ -48,6 +51,7 @@
   <section id="tab-badge" class="tab">
     <div id="badgeStats"></div>
     <div id="badgeGrid"></div>
+      <div id="extraCards"></div>
     <div id="chartCard"></div>
   </section>
 
@@ -64,7 +68,7 @@
   <button data-tab="tab-today" class="on"><span class="ico">◎</span>今天</button>
   <button data-tab="tab-train"><span class="ico">▶</span>训练</button>
   <button data-tab="tab-diet"><span class="ico">◍</span>饮食</button>
-  <button data-tab="tab-badge"><span class="ico">★</span>勋章</button>
+  <button data-tab="tab-badge"><span class="ico">★</span>成长</button>
   <button data-tab="tab-me"><span class="ico">☰</span>我</button>
 </nav>
 
@@ -89,6 +93,8 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<canvas id="confetti"></canvas>
+<input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
 
 <script src="data.js"></script>
 <script src="coach.js"></script>

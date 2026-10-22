@@ -69,6 +69,7 @@
     if (!state.checkins[d]) state.checkins[d] = { done: {}, food: [] };
     if (!state.checkins[d].done) state.checkins[d].done = {};
     if (!state.checkins[d].food) state.checkins[d].food = [];
+    if (!state.checkins[d].meals) state.checkins[d].meals = {};
     return state.checkins[d];
   };
 
@@ -94,6 +95,7 @@
     }
     bindNav(); bindPlayer();
     renderAll();
+    initCouple();
     checkVersion();
     handleStartParam();
     setInterval(() => { const t = R.today(); if (t !== today) { today = t; renderAll(); } }, 30000);
@@ -115,30 +117,40 @@
     setTimeout(go, 700);
   }
 
-  async function checkVersion() {
+  async function checkVersion(manual) {
+    let v = null;
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
-      if (!r.ok) return;
-      const v = await r.json();
-      state.build = state.build || '';
-      if (v.build && v.build !== state.build) {
-        const first = !state.build;
-        state.build = v.build; save();
-        if (!first) {
-          // 清掉外壳缓存（语音缓存保留），然后刷新
-          const keys = await caches.keys();
-          for (const k of keys) if (k.startsWith('tb-offline-')) await caches.delete(k);
-          setTimeout(() => location.reload(), 300);
-        }
-      }
+      if (r.ok) v = await r.json();
     } catch (e) {}
+    const cur = state.build || '';
+    const tag = $('#buildTag'); if (tag) tag.textContent = cur || '首次运行';
+    const sv = $('#srvBuild'); if (sv) sv.textContent = v && v.build ? v.build : '连不上';
+    if (!v || !v.build) { if (manual) toast('连不上服务器，检查网络'); return; }
+    if (!cur) { state.build = v.build; save(); return; }   // 首次只记录
+    if (v.build !== cur) {
+      if (manual) toast('发现新版，正在更新…');
+      try { const regs = await navigator.serviceWorker.getRegistrations(); for (const reg of regs) await reg.unregister(); } catch (e) {}
+      try { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); } catch (e) {}
+      state.build = v.build; save();
+      setTimeout(() => location.replace(location.pathname + '?v=' + encodeURIComponent(v.build)), 200);
+      return;
+    }
+    if (manual) toast('已是最新');
   }
+  async function forceUpdate() {
+    if (!confirm('强制更新会清掉离线缓存（语音包会保留），然后重新加载。继续？')) return;
+    try { const regs = await navigator.serviceWorker.getRegistrations(); for (const reg of regs) await reg.unregister(); } catch (e) {}
+    try { const keys = await caches.keys(); await Promise.all(keys.filter(k => k.startsWith('tb-offline-')).map(k => caches.delete(k))); } catch (e) {}
+    location.replace(location.pathname + '?force=' + Date.now());
+  }
+
 
   function renderAll() {
     today = R.today();
     plan = todayPlan(state, today);
-    renderHero(); renderStatus(); renderThree(); renderMorning(); renderSide(); renderTip();
-    renderTrain(); renderDiet(); renderBadge(); renderMe();
+    renderHero(); renderSixGrid(); renderStatus(); renderThree(); renderCouple(); renderTip();
+    renderTrain(); renderDiet(); renderBadge(); renderExtras(); renderMe();
   }
 
   /* ---------- 今天 ---------- */
@@ -475,6 +487,7 @@
         </div>
       </div>
       <div class="hint" style="margin-top:10px">基础代谢 ${Math.round(bmr(state.profile))} kcal · 日常消耗约 ${cal.tdee} kcal · BMI ${plan.nutrition.bmi}</div>
+      <button class="btn ghost" id="btnQuickAdd" style="margin-top:12px">＋ 快速记一笔（自己加也行）</button>
     </div>`;
 
     const meals = plan.nutrition.meals;
@@ -648,8 +661,10 @@
       <button class="btn ghost" id="btnReset" style="margin-top:10px;color:var(--red);border-color:rgba(255,92,122,.4)">清空所有数据</button>
       <div class="hint" style="margin-top:8px">数据只存在这台手机里。</div>
       <hr class="hr">
-      <div class="kv"><span>版本</span><span id="buildTag">—</span></div>
+      <div class="kv"><span>当前版本</span><span id="buildTag">—</span></div>
+      <div class="kv"><span>服务器版本</span><span id="srvBuild">—</span></div>
       <button class="btn ghost small" id="btnCheckUpdate" style="margin-top:8px">检查更新</button>
+      <button class="btn ghost small" id="btnForceUpdate" style="margin-top:8px">强制更新（清缓存）</button>
     </div>`;
 
     $('#btnSaveProfile').onclick = () => {
@@ -712,23 +727,9 @@
       }
     };
     $('#buildTag').textContent = state.build || '首次运行';
-    $('#btnCheckUpdate').onclick = async () => {
-      try {
-        const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
-        const v = await r.json();
-        if (v.build && v.build !== state.build) {
-          state.build = v.build; save();
-          const keys = await caches.keys();
-          for (const k of keys) if (k.startsWith('tb-offline-')) await caches.delete(k);
-          toast('发现新版，正在更新');
-          setTimeout(() => location.reload(), 500);
-        } else if (navigator.serviceWorker) {
-          const reg = await navigator.serviceWorker.getRegistration();
-          if (reg) await reg.update();
-          toast('已经是最新版');
-        }
-      } catch (e) { toast('检查失败，可能没网'); }
-    };
+    $('#btnForceUpdate').onclick = forceUpdate;
+    $('#btnCheckUpdate').onclick = () => checkVersion(true);
+;
     const useClip = typeof Voice !== 'undefined' && Voice.ready;
     $('#voiceName').textContent = useClip ? `神经语音 ${Voice.count()} 句` : '系统语音';
     refreshOffline();
@@ -827,11 +828,608 @@
       $('#' + b.dataset.tab).classList.add('on');
       window.scrollTo({ top: 0 });
       if (b.dataset.tab === 'tab-diet') renderDiet();
-      if (b.dataset.tab === 'tab-badge') renderBadge();
+      if (b.dataset.tab === 'tab-badge') { renderBadge(); renderExtras(); }
       if (b.dataset.tab === 'tab-me') renderMe();
       if (b.dataset.tab === 'tab-train') renderTrain();
       if (b.dataset.tab === 'tab-today') renderThree();
     });
+  }
+
+
+  /* ================= v2.1 升级：首页 / 饮食 / 训练 / 进度 ================= */
+  const DIMS6 = [
+    { key: 'body', name: '训练', color: '#4cc9a4' },
+    { key: 'diet', name: '饮食', color: '#f5c451' },
+    { key: 'mind', name: '心力', color: '#6aa9ff' },
+    { key: 'relation', name: '关系', color: '#ff7a9c' },
+    { key: 'order', name: '秩序', color: '#b98cff' },
+    { key: 'growth', name: '见识', color: '#6fe3e1' }
+  ];
+  function dimState() {
+    const c = check();
+    const meals = c.meals || {};
+    return {
+      body: !!(c.done || {}).train,
+      diet: Object.values(meals).some(m => m.status) || (c.food || []).length > 0,
+      mind: !!(c.done || {}).sleep,
+      relation: !!(c.done || {}).relation,
+      order: !!(c.done || {}).order,
+      growth: !!(c.done || {}).read
+    };
+  }
+
+  /* ---------- 弹层 ---------- */
+  let sheetEl = null;
+  function openSheet(title, body, onOpen) {
+    closeSheet();
+    const mask = document.createElement('div');
+    mask.className = 'sheet-mask';
+    mask.innerHTML = `<div class="sheet"><div class="grab"></div><div class="sheet-head"><div class="sheet-title">${esc(title)}</div><button class="sheet-close">✕</button></div><div class="sheet-body">${body}</div></div>`;
+    document.body.appendChild(mask); sheetEl = mask;
+    $('.sheet-close', mask).onclick = closeSheet;
+    mask.onclick = e => { if (e.target === mask) closeSheet(); };
+    if (onOpen) onOpen(mask);
+    document.body.style.overflow = 'hidden';
+  }
+  function closeSheet() { if (sheetEl) { sheetEl.remove(); sheetEl = null; } document.body.style.overflow = ''; }
+
+  function confetti() {
+    const cv = $('#confetti'); if (!cv) return;
+    const ctx = cv.getContext('2d'); cv.width = innerWidth; cv.height = innerHeight; cv.classList.add('on');
+    const colors = ['#f5c451', '#4cd7a5', '#6aa9ff', '#ff7a9c', '#b98cff', '#6fe3e1'];
+    const ps = Array.from({ length: 120 }, () => ({ x: innerWidth / 2, y: innerHeight * .35, vx: (Math.random() - .5) * 12, vy: Math.random() * -13 - 2, r: 2 + Math.random() * 4, c: colors[Math.floor(Math.random() * 6)], a: 1 }));
+    let f = 0;
+    (function loop() {
+      f++; ctx.clearRect(0, 0, cv.width, cv.height);
+      ps.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += .35; p.a -= .012; ctx.globalAlpha = Math.max(0, p.a); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.fill(); });
+      if (f < 110) requestAnimationFrame(loop); else cv.classList.remove('on');
+    })();
+  }
+
+  /* ---------- 首页 ---------- */
+  function renderHero() {
+    const left = Math.max(0, R.days(today, APP.end));
+    const st = checkinStreak(state, today);
+    const c = check();
+    const d = dimState();
+    const doneN = Object.values(d).filter(Boolean).length;
+    const cx = 100, cy = 100, r = 76, w = 13;
+    let ring = '';
+    DIMS6.forEach((dm, i) => {
+      const a1 = (-90 + i * 60 + 4) * Math.PI / 180, a2 = (-90 + i * 60 + 56) * Math.PI / 180;
+      const p1 = [cx + r * Math.cos(a1), cy + r * Math.sin(a1)], p2 = [cx + r * Math.cos(a2), cy + r * Math.sin(a2)];
+      ring += `<path d="M${p1[0]} ${p1[1]} A${r} ${r} 0 0 1 ${p2[0]} ${p2[1]}" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="${w}" stroke-linecap="round"/>`;
+      if (d[dm.key]) ring += `<path d="M${p1[0]} ${p1[1]} A${r} ${r} 0 0 1 ${p2[0]} ${p2[1]}" fill="none" stroke="${dm.color}" stroke-width="${w}" stroke-linecap="round" style="filter:drop-shadow(0 0 7px ${dm.color}88)"/>`;
+    });
+    $('#topDate').textContent = R.cn(today);
+    $('#hero').innerHTML = `
+      <div class="hero2">
+        <div class="ringwrap"><svg viewBox="0 0 200 200">${ring}</svg>
+          <div class="c"><b>${doneN}<span>/6</span></b><em>今天六维</em></div></div>
+        <div class="hinfo">
+          <div class="days">${left}<em>天后过年</em></div>
+          <div class="line">今天：${esc(plan.title)} · ${plan.minutes} 分钟</div>
+          <div class="badges">
+            ${badge(plan.level, plan.statusLabel)}
+            ${st ? badge('', `连续 ${st} 天`) : ''}
+            ${c.done.train ? badge('green', '练过了') : ''}
+          </div>
+        </div>
+      </div>
+      <div class="quickbar">
+        <button data-q="food"><span>🍚</span>记饮食</button>
+        <button data-q="train"><span>▲</span>训练</button>
+        <button data-q="water"><span>💧</span>喝水</button>
+        <button data-q="note"><span>✎</span>记一笔</button>
+      </div>`;
+    $$('#hero .quickbar button').forEach(b => b.onclick = () => {
+      const q = b.dataset.q;
+      if (q === 'food') { switchTab('tab-diet'); setTimeout(() => openFoodSearch(guessMealKey()), 80); }
+      if (q === 'train') { switchTab('tab-train'); setTimeout(startTraining, 120); }
+      if (q === 'water') { addWater(1); toast('+1 杯水'); renderHero(); renderDiet(); }
+      if (q === 'note') openQuickNote();
+    });
+  }
+  function guessMealKey() {
+    const h = new Date().getHours();
+    return h < 10 ? 'breakfast' : h < 15 ? 'lunch' : h < 21 ? 'dinner' : 'snack';
+  }
+
+  /* ---------- 饮食 ---------- */
+  function foodTotal() {
+    const c = check();
+    const skipped = c.meals || {};
+    return (c.food || []).filter(f => !(f.meal && skipped[f.meal] && skipped[f.meal].status === 'skipped'))
+      .reduce((s, f) => ({ kcal: s.kcal + (f.kcal || 0), p: s.p + (f.p || 0) }), { kcal: 0, p: 0 });
+  }
+  function mealItems(key) { return (check().food || []).filter(f => f.meal === key); }
+  function mealStatus(key) { return ((check().meals || {})[key] || {}).status || ''; }
+
+  function eatSuggestion(key) {
+    const m = plan.nutrition.meals[key];
+    addFood({ n: m.t, kcal: m.kcal, p: m.p }, key);
+    const c = check(); c.meals = c.meals || {}; c.meals[key] = { status: 'eaten' };
+    save(); renderDiet(); renderThree(); renderHero(); toast('已记 ' + m.t);
+  }
+  function skipMeal(key) {
+    const reasons = ['不饿', '太忙', '在断食', '没来得及'];
+    openSheet('这顿没吃', `<div class="seg" id="skipSeg">${reasons.map((x, i) => `<button data-r="${x}" class="${i === 0 ? 'on' : ''}">${x}</button>`).join('')}</div>
+      <div class="hint" style="margin-top:10px">跳过不计热量。忙、不饿、断食都正常，不是失败。</div>
+      <button class="btn" id="skipSave" style="margin-top:14px">记「没吃」</button>`, sheet => {
+      let reason = reasons[0];
+      $$('#skipSeg button', sheet).forEach(b => b.onclick = () => { reason = b.dataset.r; $$('#skipSeg button', sheet).forEach(x => x.classList.toggle('on', x === b)); });
+      $('#skipSave', sheet).onclick = () => {
+        const c = check(); c.meals = c.meals || {};
+        c.food = (c.food || []).filter(f => f.meal !== key);
+        c.meals[key] = { status: 'skipped', reason }; save(); closeSheet();
+        renderDiet(); renderThree(); renderHero(); toast('已记「没吃」');
+      };
+    });
+  }
+  function clearMeal(key) {
+    const c = check(); c.meals = c.meals || {}; delete c.meals[key];
+    c.food = (c.food || []).filter(f => f.meal !== key); save(); renderDiet(); renderThree(); renderHero();
+  }
+
+  function renderDiet() {
+    const c = check();
+    const t = foodTotal();
+    const target = plan.nutrition.target;
+    const pct = Math.min(1, t.kcal / target);
+    const rr = 42, C = 2 * Math.PI * rr;
+    const cal = calorieTarget(state);
+    $('#calCard').innerHTML = `<div class="card kcal2">
+      <h3><span>今天的热量</span><span class="more">目标 ${target} kcal</span></h3>
+      <div class="cal">
+        <div class="ring"><svg width="96" height="96" viewBox="0 0 96 96">
+          <circle cx="48" cy="48" r="${rr}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="8"/>
+          <circle cx="48" cy="48" r="${rr}" fill="none" stroke="#f5c451" stroke-width="8" stroke-linecap="round" stroke-dasharray="${C * pct} ${C}"/>
+        </svg><div class="num"><b>${t.kcal}</b><span>已摄入</span></div></div>
+        <div class="info">
+          <div class="k">还可以吃</div><div class="v"><b>${Math.max(0, target - t.kcal)}</b> kcal</div>
+          <div class="k" style="margin-top:10px">蛋白质 ${Math.round(t.p)} / ${plan.nutrition.protein} g</div>
+          <div class="bar"><i style="width:${Math.min(100, Math.round(t.p / plan.nutrition.protein * 100))}%"></i></div>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:10px">基础代谢 ${Math.round(bmr(state.profile))} kcal · 日常消耗约 ${cal.tdee} kcal · BMI ${plan.nutrition.bmi}</div>
+      <button class="btn ghost" id="btnQuickAdd" style="margin-top:12px">＋ 快速记一笔（自己加也行）</button>
+    </div>`;
+
+    const meals = plan.nutrition.meals;
+    const meta = { breakfast: ['早饭', '☀'], lunch: ['午饭', '◐'], dinner: ['晚饭', '☾'], snack: ['加餐', '◌'] };
+    $('#mealCard').innerHTML = `<div class="card"><h3><span>今天的三餐</span><span class="more">吃了 / 没吃 都记一下</span></h3>
+      ${['breakfast', 'lunch', 'dinner', 'snack'].map(k => {
+        const m = meals[k], st = mealStatus(k), its = mealItems(k);
+        const kcal = its.reduce((s, x) => s + x.kcal, 0);
+        const label = st === 'eaten' ? '<span class="st ok">已吃</span>' : st === 'skipped' ? `<span class="st skip">没吃${(c.meals[k].reason ? ' · ' + c.meals[k].reason : '')}</span>` : '';
+        const itemRows = its.map((x, i) => `<div class="mi"><span>${esc(x.n)}</span><span>${x.kcal} kcal <button data-del2="${(c.food || []).indexOf(x)}">删</button></span></div>`).join('');
+        return `<div class="meal ${st === 'skipped' ? 'skipped' : ''}">
+          <div class="mi-top"><div class="ico">${meta[k][1]}</div>
+            <div class="txt"><div class="t1">${meta[k][0]} ${label}</div>
+              <div class="t2">建议：${esc(m.t)} · ${m.kcal} kcal${kcal ? ' · 已记 ' + kcal + ' kcal' : ''}</div></div>
+            ${kcal ? `<div class="mk">${kcal}</div>` : ''}</div>
+          ${itemRows}
+          <div class="mbtns">
+            ${st === 'skipped'
+              ? `<button class="eat" data-eat="${k}">其实吃了</button><button data-undo="${k}">改回来</button>`
+              : st === 'eaten'
+                ? `<button class="eat" data-add="${k}">再加一笔</button><button data-skip2="${k}">改「没吃」</button><button data-undo="${k}">清空</button>`
+                : `<button class="eat" data-eat="${k}">吃了</button><button data-skip2="${k}">没吃</button><button data-add="${k}">自己加</button>`}
+          </div></div>`;
+      }).join('')}</div>`;
+    $('#btnQuickAdd').onclick = () => openFoodSearch(guessMealKey());
+    $$('[data-eat]').forEach(b => b.onclick = () => eatSuggestion(b.dataset.eat));
+    $$('[data-add]').forEach(b => b.onclick = () => openFoodSearch(b.dataset.add));
+    $$('[data-skip2]').forEach(b => b.onclick = () => skipMeal(b.dataset.skip2));
+    $$('[data-undo]').forEach(b => b.onclick = () => clearMeal(b.dataset.undo));
+    $$('[data-del2]').forEach(b => b.onclick = () => { const cc = check(); cc.food.splice(+b.dataset.del2, 1); save(); renderDiet(); renderThree(); renderHero(); });
+
+    const custom = state.customFoods || [];
+    $('#foodCard').innerHTML = `<div class="card">
+      <h3><span>快速记一笔</span><span class="more">点一次加一份</span></h3>
+      <div class="foods" id="foodChips">${FOODS.slice(0, 10).map((f, i) => `<button class="food" data-food="${i}">${esc(f.n)} · ${f.kcal}</button>`).join('')}
+        <button class="food plus" id="btnMoreFood">更多 / 搜索</button>
+        <button class="food plus" id="btnCustomFood">＋ 自定义</button></div>
+      <div class="hint" style="margin-top:10px">先选加进哪一顿：点上面的「吃了 / 自己加」会指定餐次；这里快速加默认按时间猜。</div>
+      <div class="water" style="margin-top:14px">
+        <div class="wh"><span>喝水</span><span class="more" id="waterNum">${c.water || 0}/8 杯</span></div>
+        <div class="cups">${Array.from({ length: 8 }, (_, i) => `<button class="cup ${i < (c.water || 0) ? 'on' : ''}" data-cup="${i}"></button>`).join('')}</div>
+      </div>
+    </div>`;
+    $$('#foodChips [data-food]').forEach(b => b.onclick = () => addFood(FOODS[+b.dataset.food], guessMealKey()));
+    $('#btnMoreFood').onclick = () => openFoodSearch(guessMealKey());
+    $('#btnCustomFood').onclick = () => openCustomFood(guessMealKey());
+    $$('#foodCard .cup').forEach(cup => cup.onclick = () => {
+      const i = +cup.dataset.cup; const cc = check();
+      cc.water = (cc.water || 0) === i + 1 ? i : i + 1; save(); renderDiet(); renderHero();
+    });
+
+    const notes = plan.dietNotes || [];
+    $('#dietNoteCard').innerHTML = notes.length ? `<div class="card"><h3><span>根据你的状态</span></h3>
+      ${notes.map(n => `<div class="note info"><span>i</span><div>${esc(n)}</div></div>`).join('')}</div>` : '';
+  }
+  function addFood(f, meal) {
+    const c = check();
+    c.food = c.food || [];
+    c.food.push({ n: f.n, kcal: f.kcal || 0, p: f.p || 0, meal: meal || 'extra', at: Date.now() });
+    if (meal) { c.meals = c.meals || {}; c.meals[meal] = Object.assign({}, c.meals[meal], { status: 'eaten' }); }
+    save(); renderDiet(); renderThree(); renderHero();
+    toast(`+ ${f.kcal || 0} kcal`);
+  }
+  function openFoodSearch(meal) {
+    let target = meal || guessMealKey();
+    const body = `<div class="seg" id="mSeg">${[['breakfast', '早饭'], ['lunch', '午饭'], ['dinner', '晚饭'], ['snack', '加餐']].map(([k, n]) => `<button data-m="${k}" class="${k === target ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <input class="search" id="fq" placeholder="搜食物，比如 米饭、鸡胸、奶茶">
+      <div id="flist" class="flist"></div>`;
+    openSheet('加一笔', body, sheet => {
+      const render = () => {
+        const q = $('#fq', sheet).value.trim();
+        const all = FOODS.concat(state.customFoods || []);
+        const list = q ? all.filter(f => f.n.includes(q)) : all;
+        $('#flist', sheet).innerHTML = list.slice(0, 40).map((f, i) => `<div class="frow"><div><div class="fn">${esc(f.n)}</div><div class="fk">${f.kcal} kcal · 蛋白 ${f.p || 0}g</div></div><button class="fadd" data-i="${i}">＋</button></div>`).join('') || '<div class="empty">没搜到，点下面自定义</div>';
+        $$('#flist .fadd', sheet).forEach(b => b.onclick = () => { addFood(list[+b.dataset.i], target); closeSheet(); });
+      };
+      $$('#mSeg button', sheet).forEach(b => b.onclick = () => { target = b.dataset.m; $$('#mSeg button', sheet).forEach(x => x.classList.toggle('on', x === b)); });
+      $('#fq', sheet).oninput = render;
+      render();
+    });
+  }
+  function openCustomFood(meal) {
+    openSheet('自定义食物', `<div class="field"><label>名称</label><input id="cfN" placeholder="比如 楼下牛肉面"></div>
+      <div class="row2"><div class="field"><label>热量 kcal</label><input type="number" id="cfK" placeholder="600"></div>
+      <div class="field"><label>蛋白质 g</label><input type="number" id="cfP" placeholder="25"></div></div>
+      <div class="hint">存一次，下次「更多 / 搜索」里就有。</div>
+      <button class="btn" id="cfSave" style="margin-top:12px">保存并记一笔</button>`, sheet => {
+      $('#cfSave', sheet).onclick = () => {
+        const n = $('#cfN', sheet).value.trim(); if (!n) { toast('写个名字'); return; }
+        const f = { n, kcal: +$('#cfK', sheet).value || 0, p: +$('#cfP', sheet).value || 0 };
+        state.customFoods = state.customFoods || []; state.customFoods.push(f); save();
+        addFood(f, meal || guessMealKey()); closeSheet();
+      };
+    });
+  }
+  function addWater(n) { const c = check(); c.water = Math.min(8, (c.water || 0) + n); save(); }
+
+  /* ---------- 训练：计时器 + 记录 ---------- */
+  function renderTrain() {
+    const w = WORKOUTS[plan.wid];
+    const c = check();
+    const done = !!c.done.train;
+    const moves = [];
+    (w.blocks || []).forEach(b => {
+      if (b.k === 'ex') { const ex = EX[b.ex]; moves.push(`<div class="mv"><div class="n">${esc(ex.n)}</div><div class="s">${b.sets} 组 × ${b.secs} 秒 · 休 ${b.rest} 秒${b.sides ? ' ×2 侧' : ''}</div><div class="cue">${esc(ex.cue)}</div></div>`); }
+      else if (b.k === 'walk') moves.push(`<div class="mv"><div class="n">${esc(b.name)}</div><div class="s">${Math.round(b.secs / 60)} 分钟</div></div>`);
+      else if (b.k === 'warmup' || b.k === 'cool') { const ex = EX[b.ex]; moves.push(`<div class="mv"><div class="n">${esc(b.name || ex.n)}</div><div class="s">${b.secs >= 60 ? Math.round(b.secs / 60) + ' 分钟' : b.secs + ' 秒'}</div></div>`); }
+    });
+    const logs = (state.workoutLog || {})[today] || [];
+    const hist = (state.sessions || []).slice(-7).reverse().map(s => { const ww = WORKOUTS[s.wid] || {}; return `<div class="kv"><span>${esc(s.date.slice(5))}</span><span>${esc(ww.title || s.wid)}</span></div>`; }).join('') || '<div class="empty">还没有训练记录</div>';
+    const logRows = logs.length ? logs.map(x => `<div class="kv"><span>${esc(x.ex)}</span><span>${x.w ? x.w + 'kg ' : ''}${esc(x.r)}</span></div>`).join('') : '<div class="empty">练完一组，记一下重量和次数</div>';
+
+    $('#trainCard').innerHTML = `<div class="card">
+      <h3><span>今天的训练</span><span class="more">${done ? '已完成' : '跟着时间走'}</span></h3>
+      <div class="tbig">${esc(plan.title)}${plan.mode === 'light' ? '（减量）' : ''}</div>
+      <div class="hint">约 ${plan.minutes} 分钟 · ${w.music === 'calm' ? '舒缓音乐' : '可开背景音乐'}</div>
+      <button class="btn" id="btnTrainStart" style="margin-top:12px">${done ? '再练一次' : '▶ 开始训练'}</button>
+      <div class="trow">
+        <button class="tbtn" id="btnRest">⏱ 组间计时</button>
+        <button class="tbtn" id="btnLog">✎ 记录一组</button>
+      </div>
+      <div class="hint" style="margin-top:8px">口令告诉你：第几组、做多久、休息多久。手机放旁边，屏幕自动常亮。</div>
+    </div>
+    <div class="card"><h3><span>今天练什么</span></h3>${moves.join('')}
+      <div class="hint" style="margin-top:10px">${esc(plan.why)}</div></div>
+    <div class="card"><h3><span>今天的记录</span></h3>${logRows}</div>
+    <div class="card"><h3><span>晨间八段锦</span><span class="more">约 6 分钟</span></h3><div class="hint">八式，每式约一分钟，跟着口令和呼吸做。早上做最好，晚上放松也行。</div><button class="btn ghost" id="btnMorning2" style="margin-top:10px">开始八段锦</button></div>
+    <div class="card"><h3><span>最近训练</span></h3>${hist}</div>`;
+    $('#btnTrainStart').onclick = startTraining;
+    $('#btnRest').onclick = () => openTimer(90);
+    $('#btnLog').onclick = openTrainLog;
+    const bm = $('#btnMorning2'); if (bm) bm.onclick = startMorning;
+  }
+  function openTimer(sec) {
+    let left = sec, timer = null;
+    openSheet('组间计时', `<div class="timer-num" id="tnum">${pad2(Math.floor(left / 60))}:${pad2(left % 60)}</div>
+      <div class="timer-btns"><button class="btn" id="tStart">开始</button><button class="btn ghost" id="tReset">重置</button></div>
+      <div class="seg" style="margin-top:14px" id="tPreset"><button data-s="60">60″</button><button data-s="90">90″</button><button data-s="120">120″</button><button data-s="180">3′</button></div>`, sheet => {
+      const draw = () => $('#tnum', sheet).textContent = `${pad2(Math.floor(left / 60))}:${pad2(left % 60)}`;
+      const tick = () => { left--; draw(); if (left <= 0) { clearInterval(timer); timer = null; beep(); toast('时间到'); } };
+      $('#tStart', sheet).onclick = () => { if (timer) { clearInterval(timer); timer = null; $('#tStart', sheet).textContent = '继续'; } else { timer = setInterval(tick, 1000); $('#tStart', sheet).textContent = '暂停'; } };
+      $('#tReset', sheet).onclick = () => { clearInterval(timer); timer = null; left = sec; draw(); };
+      $$('#tPreset button', sheet).forEach(b => b.onclick = () => { clearInterval(timer); timer = null; left = +b.dataset.s; draw(); });
+      sheet.addEventListener('remove', () => clearInterval(timer));
+    });
+  }
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function beep() {
+    try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); [0, .25, .5].forEach(t => { const o = ctx.createOscillator(), g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.frequency.value = 880; g.gain.value = .08; o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + .12); }); if (navigator.vibrate) navigator.vibrate([120, 80, 120]); } catch (e) {}
+  }
+  function openTrainLog() {
+    const w = WORKOUTS[plan.wid];
+    const exs = (w.blocks || []).filter(b => b.k === 'ex').map(b => EX[b.ex].n);
+    openSheet('记录一组', `<div class="field"><label>动作</label><select id="lgEx">${exs.map(x => `<option>${esc(x)}</option>`).join('')}</select></div>
+      <div class="row2"><div class="field"><label>重量 kg（自重填 0）</label><input type="number" step="0.5" id="lgW" placeholder="0"></div>
+      <div class="field"><label>次数 / 组数</label><input id="lgR" placeholder="10×3"></div></div>
+      <button class="btn" id="lgSave">保存</button>`, sheet => {
+      $('#lgSave', sheet).onclick = () => {
+        const ex = $('#lgEx', sheet).value, wgt = $('#lgW', sheet).value, r = $('#lgR', sheet).value.trim();
+        if (!r) { toast('写一下次数'); return; }
+        state.workoutLog = state.workoutLog || {};
+        (state.workoutLog[today] = state.workoutLog[today] || []).push({ ex, w: wgt, r, ts: Date.now() });
+        save(); closeSheet(); renderTrain(); toast('已记录');
+      };
+    });
+  }
+
+  /* ---------- 六维自评 / 照片 / 成果卡 ---------- */
+  function weekKey() { return R.add(today, -((new Date(today).getDay() + 6) % 7)); }
+  function renderExtras() {
+    const el = $('#extraCards'); if (!el) return;
+    const ratings = state.ratings || {};
+    const cur = ratings[weekKey()] || null;
+    const keys = Object.keys(ratings).sort();
+    const prev = keys.filter(k => k !== weekKey()).length ? ratings[keys.filter(k => k !== weekKey()).pop()] : null;
+    let svg = '', cx = 150, cy = 105, Rr = 66;
+    [2.5, 5, 7.5, 10].forEach(v => {
+      const pts = DIMS6.map((_, i) => { const a = (-90 + i * 60) * Math.PI / 180, r = Rr * v / 10; return `${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}`; }).join(' ');
+      svg += `<polygon points="${pts}" fill="none" stroke="rgba(255,255,255,.07)"/>`;
+    });
+    DIMS6.forEach((d, i) => { const a = (-90 + i * 60) * Math.PI / 180; svg += `<line x1="${cx}" y1="${cy}" x2="${cx + Rr * Math.cos(a)}" y2="${cy + Rr * Math.sin(a)}" stroke="rgba(255,255,255,.06)"/>`; });
+    const poly = (r, fill, stroke, dash) => `<polygon points="${DIMS6.map((d, i) => { const a = (-90 + i * 60) * Math.PI / 180, rr = Rr * (r[d.key] || 5) / 10; return `${cx + rr * Math.cos(a)},${cy + rr * Math.sin(a)}`; }).join(' ')}" fill="${fill}" stroke="${stroke}" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`;
+    if (prev) svg += poly(prev, 'none', 'rgba(139,149,181,.35)', '4 3');
+    const pc = state.partnerCache && state.partnerCache.snapshot && (state.partnerCache.snapshot.ratings || {})[weekKey()];
+    if (pc) svg += poly(pc, 'none', '#ff7a9c', '5 4');
+    if (cur) svg += poly(cur, 'rgba(245,196,81,.16)', '#f5c451');
+    DIMS6.forEach((d, i) => { const a = (-90 + i * 60) * Math.PI / 180; svg += `<text x="${cx + (Rr + 20) * Math.cos(a)}" y="${cy + (Rr + 20) * Math.sin(a) + 4}" text-anchor="middle" fill="${d.color}" font-size="10">${d.name}</text>`; });
+
+    const slots = [['w0', '第 0 周'], ['w4', '第 4 周'], ['w8', '第 8 周'], ['w13', '第 13 周']];
+    const ph = state.photos || {};
+    const have = slots.filter(([k]) => ph[k]);
+    const compare = have.length >= 2
+      ? `<div class="photoCmp"><img src="${ph[have[0][0]]}"><img class="after" id="afterImg" src="${ph[have[have.length - 1][0]]}"><input type="range" id="cmp" min="0" max="100" value="50"></div>`
+      : `<div class="empty">放两张照片，就能左右滑动对比</div>`;
+
+    el.innerHTML = `<div class="card"><h3><span>六维自评</span><span class="more">每周 1 分钟</span></h3>
+        <svg viewBox="0 0 300 210" style="width:100%;height:215px">${svg}</svg>
+        <div class="hint">${cur ? '实线本周，虚线上周。哪一维低于 5 分，下周只保那一维。' : '还没打分：点下面，给六个维度各打 1–10 分。'}</div>
+        <button class="btn ghost small" id="btnRate" style="margin-top:10px">${cur ? '重新打分' : '开始自评'}</button>
+      </div>
+      <div class="card"><h3><span>蜕变照片</span><span class="more">只存手机</span></h3>${compare}
+        <div class="slots">${slots.map(([k, n]) => `<button data-slot="${k}" class="${ph[k] ? 'has' : ''}">${n}<br>${ph[k] ? '已存' : '拍摄'}</button>`).join('')}</div>
+      </div>
+      <button class="btn" id="btnShare" style="margin-bottom:12px">生成蜕变成果卡</button>`;
+    $('#btnRate').onclick = openRatings;
+    $$('#extraCards .slots button').forEach(b => b.onclick = () => { window.__slot = b.dataset.slot; $('#photoInput').click(); });
+    const cmp = $('#cmp'); if (cmp) cmp.oninput = e => $('#afterImg').style.clipPath = `inset(0 0 0 ${e.target.value}%)`;
+    $('#btnShare').onclick = shareCard;
+  }
+  function openRatings() {
+    const wk = weekKey(), cur = (state.ratings || {})[wk] || {};
+    openSheet('本周六维自评', `${DIMS6.map(d => `<div class="field"><label><span>${d.name}</span><span><b id="rv_${d.key}">${cur[d.key] || 5}</b>/10</span></label><input type="range" id="rr_${d.key}" min="1" max="10" value="${cur[d.key] || 5}"></div>`).join('')}
+      <button class="btn" id="rSave">保存</button>`, sheet => {
+      DIMS6.forEach(d => $('#rr_' + d.key, sheet).oninput = () => $('#rv_' + d.key, sheet).textContent = $('#rr_' + d.key, sheet).value);
+      $('#rSave', sheet).onclick = () => { const r = {}; DIMS6.forEach(d => r[d.key] = +$('#rr_' + d.key, sheet).value); state.ratings = state.ratings || {}; state.ratings[wk] = r; save(); closeSheet(); renderExtras(); toast('已保存'); };
+    });
+  }
+  function shareCard() {
+    const c = document.createElement('canvas'); c.width = 1080; c.height = 1350;
+    const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 1080, 1350); g.addColorStop(0, '#101728'); g.addColorStop(1, '#161022');
+    x.fillStyle = g; x.fillRect(0, 0, 1080, 1350);
+    x.fillStyle = '#f5c451'; x.font = '700 34px -apple-system'; x.fillText('蜕变 · 语音教练', 80, 140);
+    x.fillStyle = '#eef2fb'; x.font = '800 86px -apple-system'; x.fillText('我变了。', 80, 280);
+    x.fillStyle = '#8b95b5'; x.font = '400 28px -apple-system'; x.fillText(`${APP.start} → ${APP.end} · ${Math.abs(R.days(APP.start, today))} 天`, 80, 340);
+    const ws = Object.values(state.checkins || {}).filter(c2 => c2.weight).map(c2 => c2.weight);
+    const first = state.profile.startWeight || ws[0] || 80, last = state.profile.weight || ws[ws.length - 1] || first;
+    const rows = [['体重', `${first} → ${last} kg`], ['连续记录', checkinStreak(state, today) + ' 天'], ['累计训练', (state.sessions || []).length + ' 次'], ['六维', (state.ratings || {})[weekKey()] ? Object.values(state.ratings[weekKey()]).reduce((a, b) => a + b, 0) + '/60' : '待自评']];
+    rows.forEach((r, i) => { const y = 460 + i * 120; x.fillStyle = 'rgba(255,255,255,.05)'; x.beginPath(); if (x.roundRect) x.roundRect(80, y - 55, 920, 95, 22); else x.rect(80, y - 55, 920, 95); x.fill(); x.fillStyle = '#8b95b5'; x.font = '400 26px -apple-system'; x.fillText(r[0], 120, y); x.fillStyle = '#f5c451'; x.font = '700 38px -apple-system'; x.textAlign = 'right'; x.fillText(r[1], 960, y); x.textAlign = 'left'; });
+    x.fillStyle = '#eef2fb'; x.font = '700 26px -apple-system'; x.fillText('回家过年，给家里人看看。', 80, 1120);
+    c.toBlob(async blob => { const file = new File([blob], '蜕变成果.png', { type: 'image/png' }); if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file] }); return; } catch (e) {} } const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = '蜕变成果.png'; a.click(); }, 'image/png');
+  }
+
+  /* ---------- 快速记一笔 ---------- */
+  function openQuickNote() {
+    openSheet('快速记一笔', `<div class="seg" id="qnSeg"><button data-v="weight" class="on">体重</button><button data-v="mood">情绪</button><button data-v="read">阅读</button></div><div id="qnBody" style="margin-top:14px"></div>`, sheet => {
+      const draw = v => {
+        const c = check();
+        const bodies = {
+          weight: `<div class="field"><label>体重 kg</label><input type="number" step="0.1" id="qW" value="${c.weight || state.profile.weight || ''}"></div>`,
+          mood: `<div class="field"><label><span>情绪</span><span><b id="qMV">${c.mood || 7}</b>/10</span></label><input type="range" id="qM" min="1" max="10" value="${c.mood || 7}"></div>`,
+          read: `<div class="field"><label>读了几页</label><input type="number" id="qR" placeholder="20"></div>`
+        };
+        $('#qnBody', sheet).innerHTML = bodies[v] + `<button class="btn" id="qSave" style="margin-top:12px">保存</button>`;
+        if (v === 'mood') $('#qM', sheet).oninput = () => $('#qMV', sheet).textContent = $('#qM', sheet).value;
+        $('#qSave', sheet).onclick = () => {
+          const cc = check();
+          if (v === 'weight') { const w2 = +$('#qW', sheet).value; if (w2) { cc.weight = w2; state.profile.weight = w2; } }
+          if (v === 'mood') cc.mood = +$('#qM', sheet).value;
+          if (v === 'read') { const n = +$('#qR', sheet).value || 0; if (n) cc.done.read = Date.now(); cc.pages = (cc.pages || 0) + n; }
+          save(); closeSheet(); renderAll(); toast('已记下');
+        };
+      };
+      $$('#qnSeg button', sheet).forEach(b => b.onclick = () => { $$('#qnSeg button', sheet).forEach(x => x.classList.toggle('on', x === b)); draw(b.dataset.v); });
+      draw('weight');
+    });
+  }
+
+  /* ================= v2.2 六维 ================= */
+  const SIX_META = {
+    body: { name: '身体', icon: '●', color: '#4cc9a4', ref: '第 2 节第 11、16 条', why: '每天 7000–8000 步或每周快走 150–300 分钟；每周 30–60 分钟力量就够。' },
+    diet: { name: '饮食', icon: '◍', color: '#f5c451', ref: '第 2 节第 7、9、27 条', why: '不喝含糖饮料、换低钠盐、每天 400 g 蔬果；胰岛素抵抗和体重都先吃出来。' },
+    mind: { name: '心力', icon: '☾', color: '#6aa9ff', ref: '第 3 节第 16、17 条；第 1 节第 25 条', why: '减少消耗型关系、生气先离场；情绪持续低落别硬扛，12356。' },
+    relation: { name: '关系', icon: '♡', color: '#ff7a9c', ref: '第 10 节；第 18 节', why: '关系质量是长期健康和生活满意度的底层变量；每周主动联系，不等别人找你。' },
+    order: { name: '秩序', icon: '▦', color: '#b98cff', ref: '第 3 节第 1 条；第 14 节', why: '关通知、清桌面、记账、证件归档；秩序省下的是每天的注意力和找东西的时间。' },
+    growth: { name: '见识', icon: '✦', color: '#6fe3e1', ref: '第 4 节第 1、4 条；第 23 节第 7、10 条', why: '把目标写成「几点在哪做什么」；多受一年教育私人回报约 9%，技能优先选要动手、要现场判断的。' }
+  };
+  function weekIndex() { return Math.floor(Math.abs(R.days(APP.start, today)) / 7); }
+  function focusDim() { return DIMS6[weekIndex() % 6]; }
+  function renderSixGrid() {
+    const c = check(), d = dimState(), f = focusDim();
+    const bodyText = `${esc(plan.title)} · ${plan.minutes} 分钟`;
+    const dt = foodTotal();
+    const items = [
+      ['body', bodyText, d.body],
+      ['diet', `${dt.kcal} / ${plan.nutrition.target} kcal`, d.diet],
+      ['mind', '睡前 3 分钟 / 写一句情绪', d.mind],
+      ['relation', '给一个人发条消息', d.relation],
+      ['order', '收拾 10 分钟 + 记账', d.order],
+      ['growth', '读 20 页 / 听 20 分钟', d.growth]
+    ];
+    $('#sixGrid').innerHTML = `<div class="card sixcard">
+      <h3><span>今天六维</span><span class="more">点一下就算做到</span></h3>
+      <div class="sixhint">本周主攻：<b style="color:${f.color}">${f.name}</b> · 其他五维每天碰一下就行</div>
+      <div class="sixg">
+        ${items.map(([k, txt, on]) => { const m = SIX_META[k]; return `<button class="sx ${on ? 'on' : ''}" data-dim="${k}" style="--c:${m.color}">
+          <span class="si" style="color:${m.color}">${m.icon}</span>
+          <span class="sn">${m.name}${k === 'diet' || k === 'body' ? '' : ''}</span>
+          <span class="stx">${txt}</span>
+          <span class="sck">${on ? '✓' : '○'}</span>
+        </button>`; }).join('')}
+      </div>
+      <div class="sixfoot"><span>依据《高性价比人生指南》767 条</span><button id="btnSixWhy">为什么是这六维？</button></div>
+    </div>`;
+    $$('#sixGrid .sx').forEach(b => b.onclick = () => {
+      const k = b.dataset.dim;
+      if (k === 'body') { switchTab('tab-train'); return; }
+      if (k === 'diet') { switchTab('tab-diet'); return; }
+      if (k === 'mind') { if (!c.done.sleep) startSleep(); else { delete c.done.sleep; save(); renderAll(); } return; }
+      const key = k === 'relation' ? 'relation' : k === 'order' ? 'order' : 'read';
+      if (c.done[key]) delete c.done[key]; else c.done[key] = Date.now();
+      save(); renderAll(); checkNewBadges();
+    });
+    $('#btnSixWhy').onclick = () => openSixWhy();
+  }
+  function openSixWhy() {
+    openSheet('为什么是这六维', `<div class="hint" style="margin-bottom:10px">只练身体，过完年还是「身体好了一点、其他照旧」。六条线一起往前挪，才叫蜕变；每条线都能在书里找到依据。</div>
+      ${DIMS6.map(d => { const m = SIX_META[d.key]; return `<div class="ex" style="border-color:${m.color}33"><div class="ex-top"><b style="color:${m.color}">${m.icon} ${m.name}</b><span>${m.ref}</span></div><div class="ex-cue">${m.why}</div></div>`; }).join('')}
+      <div class="hint" style="margin-top:10px">书：《高性价比人生指南》767 条，CC BY 4.0。</div>`);
+  }
+
+
+
+  /* ================= v2.3 双人六维 ================= */
+  const COUPLE_CHALLENGES = [
+    '一起量一次体重腰围，拍第一张合照',
+    '一起走 30 分钟，不聊工作',
+    '一起做一顿饭：两菜一汤',
+    '互相说一件感谢对方的事',
+    '一起算一次家庭账，不指责',
+    '一起 23:00 关灯睡觉',
+    '各读 20 分钟，然后交换一句',
+    '一起整理一个抽屉或角落',
+    '一起做一次力量训练，各按自己强度',
+    '一起逛一次菜市场',
+    '同角度拍一张全身照',
+    '一起断网 1 小时',
+    '一起列过年行李和礼物清单',
+    '一起复盘六维，各打一次分',
+    '一起大扫除，放一首歌',
+    '回家一起做一道菜给家人'
+  ];
+  const API = location.hostname.endsWith('github.io') ? 'https://macbook-pro-7.tail57206e.ts.net/api/couple' : '/api/couple';
+  function weekStart() { const d = new Date(today); return R.add(today, -((d.getDay() + 6) % 7)); }
+  function coupleChallenge() { return COUPLE_CHALLENGES[weekIndex() % COUPLE_CHALLENGES.length]; }
+  function partnerSnap() { return state.partnerCache && state.partnerCache.snapshot || null; }
+  function partnerDims() {
+    const snap = partnerSnap(); if (!snap) return null;
+    const c = (snap.checkins || {})[today] || {};
+    const done = c.done || {}, meals = c.meals || {};
+    return {
+      body: !!done.train,
+      diet: Object.values(meals).some(m => m.status) || (c.food || []).length > 0,
+      mind: !!done.sleep,
+      relation: !!done.relation,
+      order: !!done.order,
+      growth: !!done.read
+    };
+  }
+  function coupleStreak() {
+    const mine = state.checkins || {}, theirs = (partnerSnap() || {}).checkins || {};
+    const has = c => c && (c.sleepHours || c.weight || c.steps || Object.keys(c.done || {}).length || Object.keys(c.meals || {}).length);
+    let d = today, n = 0;
+    if (!(has(mine[d]) && has(theirs[d]))) d = R.add(today, -1);
+    while (has(mine[d]) && has(theirs[d])) { n++; d = R.add(d, -1); }
+    return n;
+  }
+  function ringMini(dims, color) {
+    const done = dims ? Object.values(dims).filter(Boolean).length : 0;
+    let seg = '';
+    DIMS6.forEach((dm, i) => {
+      const a1 = (-90 + i * 60 + 5) * Math.PI / 180, a2 = (-90 + i * 60 + 55) * Math.PI / 180, r = 34;
+      const p1 = [50 + r * Math.cos(a1), 50 + r * Math.sin(a1)], p2 = [50 + r * Math.cos(a2), 50 + r * Math.sin(a2)];
+      const on = dims && dims[dm.key];
+      seg += `<path d="M${p1[0]} ${p1[1]} A${r} ${r} 0 0 1 ${p2[0]} ${p2[1]}" fill="none" stroke="${on ? dm.color : 'rgba(255,255,255,.08)'}" stroke-width="7" stroke-linecap="round"/>`;
+    });
+    return `<div class="miniring"><svg viewBox="0 0 100 100">${seg}</svg><b>${done}<span>/6</span></b></div>`;
+  }
+  function renderCouple() {
+    const el = $('#coupleCard'); if (!el) return;
+    const p = state.partnerCache;
+    const pd = partnerDims(), md = dimState();
+    const key = weekStart(), myDone = !!(state.challenge || {})[key];
+    const theirDone = !!(p && p.snapshot && (p.snapshot.challenge || {})[key]);
+    const streakN = p ? coupleStreak() : 0;
+    el.innerHTML = `<div class="card couplecard">
+      <h3><span>我们</span><span class="more">${p ? '一起第 ' + streakN + ' 天' : '等 TA 加入'}</span></h3>
+      <div class="couplegrid">
+        <div class="cp"><div class="cpr">${ringMini(md)}</div><div class="cpn">${esc(state.myName || '我')}</div></div>
+        <div class="cp"><div class="cpr">${p ? ringMini(pd) : ringMini(null)}</div><div class="cpn">${p ? esc(p.name) : '爱人'}</div></div>
+      </div>
+      <div class="challenge">
+        <div class="ch-t">本周一起 · ${coupleChallenge()}</div>
+        <div class="ch-btns">
+          <button class="chbtn ${myDone ? 'on' : ''}" id="btnChMe">${myDone ? '✓ 我完成了' : '我完成'}</button>
+          <button class="chbtn ${theirDone ? 'on' : ''}" disabled>${theirDone ? '✓ TA 完成了' : (p ? 'TA 还没完成' : '等 TA 加入')}</button>
+        </div>
+      </div>
+      ${p ? '' : `<button class="btn ghost small" id="btnInvite" style="margin-top:10px;width:100%">邀请爱人一起（远程也能用）</button>`}
+      <div class="sixfoot" style="margin-top:10px"><span>各自记各自，不查岗、不比较</span><button id="btnRole">${state.role ? '切换身份' : '设置我是谁'}</button></div>
+      <div class="hint" style="margin-top:6px;display:none" id="syncHint"></div>
+    </div>`;
+    const sh = $('#syncHint'); if (sh && location.hostname.endsWith('github.io')) { sh.style.display = 'block'; sh.textContent = '双人同步需要这台 Mac 在线；Mac 不在时各自记录，等它回来会自动补。'; }
+    $('#btnChMe').onclick = () => { state.challenge = state.challenge || {}; if (state.challenge[key]) delete state.challenge[key]; else state.challenge[key] = Date.now(); save(); renderCouple(); syncCouple(); };
+    $('#btnRole').onclick = openRoleSheet;
+    const inv = $('#btnInvite'); if (inv) inv.onclick = openInvite;
+  }
+  function openRoleSheet() {
+    openSheet('你是谁', `<div class="hint" style="margin-bottom:10px">两台手机各选一个身份，数据会自动同步到这台 Mac（远程也能用）。选错了可以再改。</div>
+      <div class="field"><label>你的名字</label><input id="roleName" value="${esc(state.myName || '')}" placeholder="比如 小王"></div>
+      <div class="seg" id="roleSeg"><button data-r="me" class="${state.role !== 'partner' ? 'on' : ''}">我是我</button><button data-r="partner" class="${state.role === 'partner' ? 'on' : ''}">我是爱人</button></div>
+      <button class="btn" id="roleSave" style="margin-top:14px">保存</button>`, sheet => {
+      let role = state.role || 'me';
+      $$('#roleSeg button', sheet).forEach(b => b.onclick = () => { role = b.dataset.r; $$('#roleSeg button', sheet).forEach(x => x.classList.toggle('on', x === b)); });
+      $('#roleSave', sheet).onclick = () => { state.role = role; state.myName = $('#roleName', sheet).value.trim() || (role === 'me' ? '我' : '爱人'); save(); closeSheet(); renderCouple(); syncCouple(); toast('已设置'); };
+    });
+  }
+  function openInvite() {
+    const url = location.origin + '/';
+    openSheet('邀请爱人', `<div class="hint">把下面的地址发给 TA，手机 4G/5G 也能打开，不用同一个 Wi-Fi；打开后选「我是爱人」，再添加到主屏幕。</div>
+      <div class="url" style="margin:10px 0;word-break:break-all;font-weight:700">${esc(url)}</div>
+      <button class="btn ghost" id="cpCopy" style="margin-top:0">复制链接</button>
+      <div class="hint" style="margin-top:12px">这个地址是公网 HTTPS，不用装证书。只要这台 Mac 开着、联网，TA 在哪都能打开。</div>
+      <div class="hint" style="margin-top:10px">装好后：选「我是爱人」→ 填名字 → 保存。之后你们各自打卡，首页会看到彼此的六维。</div>`, sheet => {
+      $('#cpCopy', sheet).onclick = async () => { try { await navigator.clipboard.writeText(url); toast('已复制'); } catch (e) { toast(url); } };
+    });
+  }
+  function syncCouple() {
+    if (!state.role) return;
+    const snap = {
+      profile: state.profile,
+      checkins: Object.fromEntries(Object.entries(state.checkins || {}).filter(([d]) => R.days(d, today) <= 30)),
+      ratings: state.ratings || {},
+      challenge: state.challenge || {},
+      sessions: (state.sessions || []).slice(-50)
+    };
+    fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: state.role, name: state.myName || '', snapshot: snap }) })
+      .then(() => fetch(API)).then(r => r.json()).then(d => {
+        const other = state.role === 'me' ? d.partner : d.me;
+        if (other) { state.partnerCache = other; save(); renderCouple(); }
+      }).catch(() => {});
+  }
+  function initCouple() {
+    try { const pc = localStorage.getItem('tb_partner'); if (pc && !state.partnerCache) state.partnerCache = JSON.parse(pc); } catch (e) {}
+    renderCouple(); syncCouple();
+    setInterval(syncCouple, 60000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) syncCouple(); });
   }
 
   document.addEventListener('DOMContentLoaded', init);
