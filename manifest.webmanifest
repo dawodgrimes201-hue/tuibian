@@ -1,0 +1,14 @@
+{
+  "name": "蜕变 · 语音教练",
+  "short_name": "蜕变",
+  "description": "下班之后的语音教练：动作细到每一次，按状态自动调整。",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#080b12",
+  "theme_color": "#080b12",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

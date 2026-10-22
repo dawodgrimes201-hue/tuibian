@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#080b12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="蜕变">
+<meta name="description" content="下班之后的语音教练：动作细到每一次，按你每天的状态自动调整。">
+<title>蜕变 · 语音教练</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+
+  <div class="top">
+    <div class="brand">蜕变<span>·</span><small>语音教练</small></div>
+    <div class="topright" id="topDate">—</div>
+  </div>
+
+  <!-- ===== 今晚 ===== -->
+  <section id="tab-tonight" class="tab on">
+    <div class="hero">
+      <div class="big"><span id="heroDays">—</span><em>天后 · 2 月 6 日</em></div>
+      <div class="t1" id="heroTitle">下班之后，把五条线各往前挪一格</div>
+      <div class="t2" id="heroSub">—</div>
+      <div class="badges" id="heroBadges"></div>
+    </div>
+
+    <div id="offlineBanner"></div>
+    <div class="card" id="snapCard"></div>
+    <div id="planCard"></div>
+    <div id="whyCard"></div>
+    <div id="dietCard"></div>
+    <div class="card" id="tlCard">
+      <h3><span>下班时间轴</span><span class="more" id="tlNow">—</span></h3>
+      <div class="tl" id="tlBody"></div>
+      <div class="hint" style="margin-top:10px">不用全做到。先做运动那一件，其他顺手。</div>
+    </div>
+    <div class="card">
+      <h3><span>今天一条</span><span class="more" id="tipRef">—</span></h3>
+      <div class="hint" id="tipTxt" style="font-size:14px;color:var(--tx);line-height:1.7"></div>
+    </div>
+    <div class="hint" style="text-align:center;padding:14px 0 6px">动作依据《高性价比人生指南》767 条 · 备选单，不是任务清单</div>
+  </section>
+
+  <!-- ===== 教练 ===== -->
+  <section id="tab-coach" class="tab">
+    <div class="card">
+      <h3><span>语音跟练</span><span class="more">带上耳机，跟着做</span></h3>
+      <div class="hint" style="margin-bottom:10px">所有动作都有人念口令：第几组、第几次、休息多久、哪里容易做错。手机放旁边就行，屏幕会自动常亮。</div>
+      <div class="q">
+        <div class="lab"><span>强度</span></div>
+        <div class="chips" id="intensityChips">
+          <button class="chip" data-mode="full">完整</button>
+          <button class="chip" data-mode="light">减量</button>
+          <button class="chip" data-mode="minimal">保底</button>
+        </div>
+      </div>
+    </div>
+    <div id="coachList"></div>
+  </section>
+
+  <!-- ===== 记录 ===== -->
+  <section id="tab-log" class="tab">
+    <div class="card">
+      <h3><span>今天的状态</span><span class="more" id="logDate">—</span></h3>
+      <div class="hint" style="margin-bottom:6px">每天 30 秒。填了，方案才会跟着你变。</div>
+      <div class="q">
+        <div class="lab"><span>几点睡 / 几点起</span></div>
+        <div class="row2">
+          <input type="time" id="inSleepAt">
+          <input type="time" id="inWakeAt">
+        </div>
+      </div>
+      <div class="q">
+        <div class="lab"><span>身体信号（可多选）</span><span class="spk" data-speak="身体信号">🔊</span></div>
+        <div class="chips" id="symChips"></div>
+      </div>
+      <div class="q">
+        <div class="lab"><span>肚子疼的程度</span><span id="bellyVal">不疼</span></div>
+        <input type="range" id="inBelly" min="0" max="5" step="1" value="0">
+      </div>
+      <div class="q">
+        <div class="lab"><span>自评精力</span><span id="energyVal">3 / 5</span></div>
+        <input type="range" id="inEnergy" min="1" max="5" step="1" value="3">
+      </div>
+      <div class="q">
+        <div class="lab"><span>情绪</span><span id="moodVal">7 / 10</span></div>
+        <input type="range" id="inMood" min="1" max="10" step="1" value="7">
+      </div>
+      <div class="row2">
+        <div class="field"><label>体重 (kg)</label><input type="number" step="0.1" inputmode="decimal" id="inWeight" placeholder="80.0"></div>
+        <div class="field"><label>步数</label><input type="number" inputmode="numeric" id="inSteps" placeholder="8000"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>屏幕时间 (小时)</label><input type="number" step="0.5" id="inScreen" placeholder="3"></div>
+        <div class="field"><label>阅读 (页)</label><input type="number" inputmode="numeric" id="inReading" placeholder="20"></div>
+      </div>
+      <div class="toggle">
+        <div>今天喝酒了<span class="hint">（喝酒当天不练力量）</span></div>
+        <div class="switch" id="inDrink"></div>
+      </div>
+      <div class="field"><label>备注（今天最难的一件事 / 身体感觉）</label><textarea id="inNote" placeholder="写一句就行，语音复盘会用到"></textarea></div>
+      <button class="btn" id="btnSaveLog">保存今天的状态</button>
+    </div>
+
+    <div class="card">
+      <h3><span>腹痛日记</span><span class="more">疼的时间 + 之前吃了什么</span></h3>
+      <div class="hint" style="margin-bottom:8px">这是给医生看的东西，也是找出规律的唯一办法。</div>
+      <div class="chips" id="bellyFoods"></div>
+      <div class="row2" style="margin-top:10px">
+        <input type="time" id="bellyAt">
+        <select id="bellyWhen">
+          <option value="早起">早起时</option>
+          <option value="饭后">饭后</option>
+          <option value="空腹">空腹时</option>
+          <option value="半夜">半夜</option>
+        </select>
+      </div>
+      <button class="btn ghost small" id="btnBelly" style="margin-top:10px">记一条</button>
+      <div id="bellyList" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <h3><span>最近 7 天</span></h3>
+      <div id="histList"></div>
+    </div>
+  </section>
+
+  <!-- ===== 进度 ===== -->
+  <section id="tab-progress" class="tab">
+    <div class="grid2">
+      <div class="stat"><div class="k">连续记录</div><div class="v" id="stStreak">0<small>天</small></div></div>
+      <div class="stat"><div class="k">本周训练</div><div class="v" id="stSess">0<small>次</small></div></div>
+      <div class="stat"><div class="k">平均睡眠</div><div class="v" id="stSleep">—</div></div>
+      <div class="stat"><div class="k">最新体重</div><div class="v" id="stWeight">—</div></div>
+    </div>
+    <div class="card">
+      <h3><span>体重</span><span class="more">目标 74–78 kg</span></h3>
+      <svg class="chart" id="weightChart" viewBox="0 0 300 110" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="card">
+      <h3><span>睡眠（近 14 天）</span><span class="more">目标 7 小时</span></h3>
+      <div class="bars" id="sleepBars"></div>
+    </div>
+    <div class="card">
+      <h3><span>五条线完成度</span><span class="more">近 7 天</span></h3>
+      <div id="dimBars"></div>
+    </div>
+    <div class="card">
+      <h3><span>军师看到的事</span><span class="more">根据你的记录</span></h3>
+      <div id="insightList"></div>
+    </div>
+    <div class="card">
+      <h3><span>本周复盘</span><span class="more">周日晚做</span></h3>
+      <div class="q">
+        <div class="lab"><span>这一周，哪条线掉了？</span></div>
+        <div class="chips" id="weekDimChips"></div>
+      </div>
+      <div class="field"><label>一句话复盘（下周只保这一条）</label><textarea id="weekNote" placeholder="例如：这周腰疼，只保腰背和走路。"></textarea></div>
+      <button class="btn" id="btnSaveWeek">保存周复盘</button>
+      <div id="weekHistory" style="margin-top:12px"></div>
+    </div>
+    <div class="card">
+      <h3><span>明日</span><span class="more">自动调整</span></h3>
+      <div class="hint" id="tomorrowHint" style="font-size:14px;color:var(--tx)"></div>
+    </div>
+  </section>
+
+  <!-- ===== 我 ===== -->
+  <section id="tab-me" class="tab">
+    <div class="card" id="profileCard"></div>
+
+    <div class="card">
+      <h3><span>语音</span><span class="more" id="voiceName">—</span></h3>
+      <div class="toggle"><div>开启语音口令</div><div class="switch on" id="tgVoice"></div></div>
+      <div class="q">
+        <div class="lab"><span>音色</span><span class="more" id="voiceName"></span></div>
+        <div class="chips" id="personaChips">
+          <button class="chip" data-p="female">女声 · 温柔带练</button>
+          <button class="chip" data-p="male">男声 · 有劲</button>
+        </div>
+      </div>
+      <div class="field"><label>报数方式</label>
+        <select id="selCount">
+          <option value="every">每一次都报（跟练最准）</option>
+          <option value="half">开头和最后三次报</option>
+          <option value="off">只报第几组</option>
+        </select>
+      </div>
+      <button class="btn ghost" id="btnTestVoice">试听一句</button>
+      <div class="hint" style="margin-top:8px" id="voiceHint">—</div>
+    </div>
+
+    <div class="card">
+      <h3><span>提醒</span><span class="more">手机日历，锁屏也响</span></h3>
+      <div class="row2">
+        <div class="field"><label>运动时间</label><input type="time" id="setMove"></div>
+        <div class="field"><label>睡前流程</label><input type="time" id="setWind"></div>
+      </div>
+      <button class="btn ghost" id="btnIcs">下载日历提醒（.ics）</button>
+      <div class="hint" style="margin-top:8px">导入 iPhone 日历后，到点锁屏也会提醒。App 不用开着。</div>
+    </div>
+
+    <div class="card">
+      <h3><span>离线语音包</span><span class="more" id="offlineStatus">—</span></h3>
+      <div class="hint" style="margin-bottom:8px">下载一次（约 9 MB），之后没网、Mac 关机也能跟着练，音频不会断。</div>
+      <button class="btn" id="btnOfflinePack">下载离线语音包</button>
+      <div class="hint" id="offlineHint" style="margin-top:8px">—</div>
+    </div>
+
+    <div class="card">
+      <h3><span>数据</span></h3>
+      <div class="row2">
+        <button class="btn ghost" id="btnExport">导出</button>
+        <label class="btn ghost" style="text-align:center;cursor:pointer">导入<input type="file" id="fileImport" accept="application/json" style="display:none"></label>
+      </div>
+      <div class="hint" style="margin-top:8px">数据只存在这台手机里，不上传服务器。</div>
+      <button class="btn red" id="btnReset" style="margin-top:12px">清空所有数据</button>
+    </div>
+    <div class="hint" style="text-align:center;padding:14px 0">依据《高性价比人生指南》（CC BY 4.0）· 不做医疗诊断，身体不适请看医生</div>
+  </section>
+
+</div>
+
+<nav class="nav">
+  <button data-tab="tab-tonight" class="on"><span class="ico">◎</span>今晚</button>
+  <button data-tab="tab-coach"><span class="ico">◉</span>教练</button>
+  <button data-tab="tab-log"><span class="ico">✓</span>记录</button>
+  <button data-tab="tab-progress"><span class="ico">◔</span>进度</button>
+  <button data-tab="tab-me"><span class="ico">☰</span>我</button>
+</nav>
+
+<!-- 播放器 -->
+<div class="player" id="player">
+  <div class="p-top">
+    <div class="p-title" id="pTitle">—</div>
+    <button class="p-close" id="pClose">✕</button>
+  </div>
+  <div class="p-main">
+    <div class="p-big" id="pBig">准备开始</div>
+    <div class="p-sub" id="pSub"></div>
+  </div>
+  <div class="p-progress"><i id="pBar"></i></div>
+  <div class="p-note" id="pNote">🔊 音量开到一半以上 · 屏幕自动常亮</div>
+  <div class="p-controls">
+    <button id="pStop">结束</button>
+    <button class="main" id="pPause">暂停</button>
+  </div>
+  <div class="p-wake" id="pWake">—</div>
+</div>
+
+<!-- 语音问诊 -->
+<div class="sheet" id="intake">
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:16px;font-weight:800">让我更了解你</div>
+      <button class="p-close" id="intakeClose">✕</button>
+    </div>
+    <div class="hint" id="intakeProg" style="margin-top:4px">—</div>
+    <div id="intakeBody" style="margin-top:14px"></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn ghost" id="intakeSkip">跳过这题</button>
+      <button class="btn" id="intakeNext">下一题</button>
+    </div>
+  </div>
+</div>
+
+<!-- 播放列表选择 -->
+<div class="toast" id="toast"></div>
+
+<script src="data.js"></script>
+<script src="coach.js"></script>
+<script src="rules.js"></script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
