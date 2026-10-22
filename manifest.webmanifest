@@ -1,7 +1,7 @@
 {
-  "name": "蜕变 · 语音教练",
+  "name": "蜕变",
   "short_name": "蜕变",
-  "description": "下班之后的语音教练：动作细到每一次，按状态自动调整。",
+  "description": "下班之后：练身体、吃对、睡好，拿勋章。",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#080b12",

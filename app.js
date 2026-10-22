@@ -1,944 +1,677 @@
-/* 蜕变 · 语音教练 —— 界面与状态 */
+/* 蜕变 · 界面 */
 (function () {
   'use strict';
-  const LS = 'tb_coach_v2';
+  const LS = 'tb_v3';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  /* ---------- 状态 ---------- */
   function defaultState() {
     return {
-      v: 2,
-      profile: { height: 178, weight: 80, targetLow: 74, targetHigh: 78, intake: {} },
-      checkins: {}, sessions: [], weekly: {}, belly: [],
-      settings: { voice: true, rate: 1.02, count: 'every', move: '19:00', wind: '22:30', intensity: 'auto', persona: 'female' }
+      v: 3,
+      profile: Object.assign({}, PROFILE_DEFAULT, { startWeight: 80 }),
+      checkins: {}, sessions: [], weekly: {}, unlocked: {},
+      settings: { voice: true, persona: 'female', music: true, musicVol: 0.07 }
     };
   }
   let state = load();
   let today = R.today();
   let plan = null;
-  let draft = { symptoms: [], energy: 3, timeMin: 90, sleepHours: 7, bellyLevel: 0 };
+  let draft = null;
   let player = null;
-  let wakeLock = null;
-  let playerMeta = null;
+  let wake = null;
+  let meta = null;
+  let inited = false;
+
+  function migrateOld(d) {
+    try {
+      const raw = localStorage.getItem('tb_coach_v2');
+      if (!raw) return d;
+      const old = JSON.parse(raw);
+      if (old.profile) {
+        d.profile.weight = old.profile.weight || d.profile.weight;
+        d.profile.height = old.profile.height || d.profile.height;
+        d.profile.startWeight = old.profile.weight || d.profile.startWeight;
+      }
+      Object.entries(old.checkins || {}).forEach(([date, c]) => {
+        const n = { done: {}, food: [] };
+        if (c.sleepHours) n.sleepHours = c.sleepHours;
+        if (c.weight) n.weight = c.weight;
+        if (c.steps) n.steps = c.steps;
+        if (c.energy) n.energy = c.energy;
+        if (c.signals) n.signals = c.signals;
+        else if (c.symptoms) n.signals = (c.symptoms || []).filter(x => x !== '无');
+        if (Object.keys(n).length) d.checkins[date] = n;
+      });
+      (old.sessions || []).forEach(x => d.sessions.push({ date: x.date, wid: 'walk', ts: x.ts || Date.now() }));
+      d.weekly = old.weekly || {};
+    } catch (e) {}
+    return d;
+  }
 
   function load() {
     try {
       const raw = localStorage.getItem(LS);
-      if (!raw) return defaultState();
+      if (!raw) return migrateOld(defaultState());
       const s = JSON.parse(raw);
       const d = defaultState();
       return Object.assign(d, s, {
         profile: Object.assign(d.profile, s.profile || {}),
-        settings: Object.assign(d.settings, s.settings || {})
+        settings: Object.assign(d.settings, s.settings || {}),
+        checkins: s.checkins || {}, sessions: s.sessions || [],
+        weekly: s.weekly || {}, unlocked: s.unlocked || {}
       });
     } catch (e) { return defaultState(); }
   }
   function save() { try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) {} }
-
-  const check = date => {
+  const check = (date) => {
     const d = date || today;
-    if (!state.checkins[d]) state.checkins[d] = { done: {} };
+    if (!state.checkins[d]) state.checkins[d] = { done: {}, food: [] };
     if (!state.checkins[d].done) state.checkins[d].done = {};
+    if (!state.checkins[d].food) state.checkins[d].food = [];
     return state.checkins[d];
   };
 
-  /* ---------- 通用 ---------- */
   let toastTimer = null;
   function toast(msg) {
-    const el = $('#toast');
-    el.textContent = msg;
-    el.classList.add('on');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('on'), 2200);
-  }
-  function speak(text) {
-    if (!state.settings.voice) return;
-    TTS.unlock(); TTS.stop(); TTS.say(text);
+    const el = $('#toast'); el.textContent = msg; el.classList.add('on');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2400);
   }
   function badge(level, text) { return `<span class="badge ${level}">${esc(text)}</span>`; }
-  let seqToken = 0;
-  async function speakSeq(arr) {
-    const my = ++seqToken;
-    for (const t of arr) {
-      if (my !== seqToken) return;
-      await TTS.say(t);
-      await new Promise(r => setTimeout(r, 120));
-    }
-  }
-  function introCueTexts(p) {
-    const out = ['今晚这样排。'];
-    const ords = ['第一件', '第二件', '第三件', '第四件', '第五件', '第六件'];
-    (p.blocks || []).forEach((b, i) => {
-      out.push(ords[i] || '然后');
-      out.push(speakTitle(String(b.title).replace(/（[^）]*）/g, '')));
-    });
-    if (p.level === 'red') out.push('今天先别练，去门诊看看。');
-    else if (p.whySay) out.push(p.whySay);
-    out.push('不用全做完，先做一件。');
-    return out;
-  }
 
-  /* ---------- 启动 ---------- */
-  let inited = false;
   function init() {
     if (inited) return; inited = true;
     TTS.supported && TTS.init();
-    TTS.rate = state.settings.rate;
     TTS.enabled = state.settings.voice;
     if (typeof Voice !== 'undefined') Voice.init(state.settings.persona || 'female').then(() => renderMe());
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').then(reg => {
-        reg.addEventListener('updatefound', () => {});
-      }).catch(() => {});
+      navigator.serviceWorker.register('sw.js').catch(() => {});
       const hadCtrl = !!navigator.serviceWorker.controller;
       let reloaded = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (hadCtrl && !reloaded) { reloaded = true; setTimeout(() => location.reload(), 300); }
       });
     }
-    window.addEventListener('offline', () => toast('已离线，离线包照常能用'));
-    window.addEventListener('online', () => toast('网络回来了'));
-    bindNav(); bindPlayer(); bindLog(); bindProgress(); bindMe(); bindIntake();
+    bindNav(); bindPlayer();
     renderAll();
-    setInterval(() => {
-      const t = R.today();
-      if (t !== today) { today = t; renderAll(); }
-      else { renderTimelineNow(); }
-    }, 30000);
+    setInterval(() => { const t = R.today(); if (t !== today) { today = t; renderAll(); } }, 30000);
   }
 
   function renderAll() {
     today = R.today();
-    plan = tonightPlan(state, today);
-    renderHero(); renderOfflineBanner(); renderSnap(); renderPlan(); renderWhy(); renderDiet();
-    renderTimeline(); renderTip(); renderCoach(); renderLog(); renderProgress(); renderMe();
+    plan = todayPlan(state, today);
+    renderHero(); renderStatus(); renderThree(); renderSide(); renderTip();
+    renderTrain(); renderDiet(); renderBadge(); renderMe();
   }
 
-  /* ---------- 今晚：hero ---------- */
+  /* ---------- 今天 ---------- */
   function renderHero() {
-    const left = R.days(today, APP.end);
-    $('#heroDays').textContent = left > 0 ? left : 0;
-    const wd = R.wd(today);
-    const week = Math.min(15, Math.max(1, Math.ceil((R.days(APP.start, today) + 1) / 7)));
+    const left = Math.max(0, R.days(today, APP.end));
+    const st = checkinStreak(state, today);
+    const doneTrain = !!(check().done || {}).train;
     $('#topDate').textContent = R.cn(today);
-    $('#heroTitle').textContent = `第 ${week} 周 · 今天把五条线各碰一下`;
-    $('#heroSub').textContent = `${R.cn(today)} · 下班之后的时间，做一件也算赢`;
-    const b = [badge(plan.level === 'red' ? 'red' : plan.level === 'yellow' ? 'yellow' : 'green', plan.statusLabel)];
-    if (plan.why) b.push(badge('', plan.why));
-    if (!state.profile.intake || !Object.keys(state.profile.intake).length) b.push(badge('yellow', '先让我了解你 · 2 分钟'));
-    $('#heroBadges').innerHTML = b.join('');
+    $('#hero').innerHTML = `
+      <div class="days">${left}<em>天后过年</em></div>
+      <div class="line">今天：${esc(plan.title)} · ${plan.minutes} 分钟</div>
+      <div class="sub">${R.cn(today)} · ${plan.mode === 'light' ? '减量日，做轻一点也算完成' : '正常日，跟着时间练'}</div>
+      <div class="badges">
+        ${badge(plan.level, plan.statusLabel)}
+        ${st ? badge('', `连续记录 ${st} 天`) : ''}
+        ${doneTrain ? badge('green', '今天练过了') : ''}
+      </div>`;
   }
 
-  async function renderOfflineBanner() {
-    const el = $('#offlineBanner');
-    if (!el) return;
-    const st = await refreshOfflineStatus();
-    if (!st || st.have >= st.total) { el.innerHTML = ''; return; }
-    el.innerHTML = `<div class="card" style="border-color:rgba(240,180,41,.35);background:linear-gradient(180deg,rgba(240,180,41,.10),rgba(13,18,32,.9))">
-      <h3><span>先做一次：把 App 装到手机里</span><span class="more">${st.have}/${st.total}</span></h3>
-      <div class="hint" style="margin-bottom:8px">下载离线语音包（约 9 MB）。下完之后，<b>Mac 关机、没网也能跟着练</b>，不用再连家里这台电脑。</div>
-      <button class="btn" id="btnOfflinePack2">一键下载离线包</button>
-    </div>`;
-    const b = $('#btnOfflinePack2');
-    if (b) b.onclick = downloadOfflinePack;
-  }
-
-  /* ---------- 今晚：状态快照 ---------- */
-  function renderSnap() {
+  function renderStatus() {
     const c = check();
-    const filled = !!c.quick;
-    const el = $('#snapCard');
-    if (!filled) {
+    const el = $('#statusCard');
+    if (!c.saved) {
+      draft = draft && draft.date === today ? draft : { date: today, sleepHours: 7, energy: 3, timeMin: 45, signals: [] };
       const sleepOpts = [['<5.5', 5], ['5.5–6.5', 6], ['6.5–7.5', 7], ['>7.5', 8]];
-      const timeOpts = [[90, '90 分钟'], [60, '1 小时'], [30, '半小时'], [10, '几乎没时间']];
-      el.innerHTML = `
-        <h3><span>① 30 秒 · 今天什么状态</span><span class="more">决定今晚怎么排</span></h3>
-        <div class="q">
-          <div class="lab"><span>昨晚睡了多久</span><span class="spk" data-spk="昨晚睡了多久？请选择。">🔊</span></div>
-          <div class="chips" id="dSleep">${sleepOpts.map(o => `<button class="chip" data-v="${o[1]}">${o[0]} 小时</button>`).join('')}</div>
-        </div>
-        <div class="q">
-          <div class="lab"><span>今早身体有什么信号（可多选）</span></div>
-          <div class="chips" id="dSym">${['没什么', '肚子疼', '肚子胀', '腰酸', '腰疼到腿', '头痛', '乏力'].map(s => `<button class="chip" data-v="${s}">${s}</button>`).join('')}</div>
-        </div>
-        <div class="q">
-          <div class="lab"><span>今天精力</span><span id="dEnergyTxt">3 / 5</span></div>
-          <div class="chips" id="dEnergy">${[1, 2, 3, 4, 5].map(n => `<button class="chip" data-v="${n}">${n}</button>`).join('')}</div>
-        </div>
-        <div class="q">
-          <div class="lab"><span>今晚能腾出多久</span></div>
-          <div class="chips" id="dTime">${timeOpts.map(o => `<button class="chip" data-v="${o[0]}">${o[1]}</button>`).join('')}</div>
-        </div>
-        <button class="btn" id="btnMakePlan">按我的状态排今晚</button>
-        <button class="btn ghost" id="btnPreviewVoice" style="margin-top:8px">先听一句</button>`;
-      el.querySelectorAll('#dSleep .chip').forEach(b => b.onclick = () => { draft.sleepHours = +b.dataset.v; pickOne($('#dSleep'), b); });
-      el.querySelectorAll('#dSym .chip').forEach(b => b.onclick = () => {
+      const timeOpts = [[90, '90 分钟'], [60, '1 小时'], [45, '45 分钟'], [20, '20 分钟']];
+      el.innerHTML = `<div class="card">
+        <h3><span>今天什么状态</span><span class="more">30 秒</span></h3>
+        <div class="q"><div class="lab"><span>昨晚睡了多久</span></div>
+          <div class="chips" id="dSleep">${sleepOpts.map(o => `<button class="chip" data-v="${o[1]}">${o[0]}</button>`).join('')}</div></div>
+        <div class="q"><div class="lab"><span>身上有信号吗（可多选，没有就点「无」）</span></div>
+          <div class="chips" id="dSig">${SIGNALS.map(s => `<button class="chip" data-v="${s}">${s}</button>`).join('')}</div></div>
+        <div class="q"><div class="lab"><span>今天精力</span></div>
+          <div class="chips" id="dEnergy">${[1, 2, 3, 4, 5].map(n => `<button class="chip" data-v="${n}">${n}</button>`).join('')}</div></div>
+        <div class="q"><div class="lab"><span>今天能练多久</span></div>
+          <div class="chips" id="dTime">${timeOpts.map(o => `<button class="chip" data-v="${o[0]}">${o[1]}</button>`).join('')}</div></div>
+        <button class="btn" id="btnPlanNow">生成今天的安排</button>
+      </div>`;
+      pickOne($('#dSleep'), el.querySelector(`#dSleep .chip[data-v="${draft.sleepHours}"]`));
+      pickOne($('#dEnergy'), el.querySelector(`#dEnergy .chip[data-v="${draft.energy}"]`));
+      pickOne($('#dTime'), el.querySelector(`#dTime .chip[data-v="${draft.timeMin}"]`));
+      draft.signals.forEach(s => { const b = el.querySelector(`#dSig .chip[data-v="${s}"]`); if (b) b.classList.add('on'); });
+      $$('#dSleep .chip', el).forEach(b => b.onclick = () => { draft.sleepHours = +b.dataset.v; pickOne($('#dSleep'), b); });
+      $$('#dEnergy .chip', el).forEach(b => b.onclick = () => { draft.energy = +b.dataset.v; pickOne($('#dEnergy'), b); });
+      $$('#dTime .chip', el).forEach(b => b.onclick = () => { draft.timeMin = +b.dataset.v; pickOne($('#dTime'), b); });
+      $$('#dSig .chip', el).forEach(b => b.onclick = () => {
         const v = b.dataset.v;
-        if (v === '没什么') { draft.symptoms = []; el.querySelectorAll('#dSym .chip').forEach(x => x.classList.remove('on')); b.classList.add('on'); return; }
+        if (v === '无') {
+          b.classList.add('on');
+          $$('#dSig .chip', el).forEach(x => { if (x !== b) x.classList.remove('on'); });
+          draft.signals = [];
+          return;
+        }
         b.classList.toggle('on');
-        draft.symptoms = $$('#dSym .chip.on').map(x => x.dataset.v);
+        el.querySelector('#dSig .chip[data-v="无"]').classList.remove('on');
+        draft.signals = $$('#dSig .chip.on', el).map(x => x.dataset.v);
       });
-      el.querySelectorAll('#dEnergy .chip').forEach(b => b.onclick = () => {
-        draft.energy = +b.dataset.v; pickOne($('#dEnergy'), b);
-        $('#dEnergyTxt').textContent = draft.energy + ' / 5';
-      });
-      el.querySelectorAll('#dTime .chip').forEach(b => b.onclick = () => { draft.timeMin = +b.dataset.v; pickOne($('#dTime'), b); });
-      // 默认值
-      pickOne($('#dSleep'), el.querySelector('#dSleep .chip[data-v="7"]'));
-      pickOne($('#dEnergy'), el.querySelector('#dEnergy .chip[data-v="3"]'));
-      pickOne($('#dTime'), el.querySelector('#dTime .chip[data-v="90"]'));
-      draft.symptoms = [];
-      $('#btnMakePlan').onclick = makePlan;
-      $('#btnPreviewVoice').onclick = () => speak('今天状态怎么样？点几下就好，我按你的状态排今晚。');
+      $('#btnPlanNow').onclick = saveStatus;
       return;
     }
-    const syms = (c.symptoms || []).join('、') || '没什么';
-    const sh = c.sleepHours || '';
-    el.innerHTML = `
-      <h3><span>今天的状态</span><span class="more">已按状态排好</span></h3>
-      <div class="sum">
-        ${badge('', sh ? `睡 ${sh} 小时` : '睡眠未记')}
-        ${badge('', `精力 ${c.energy || 3}/5`)}
-        ${badge('', `今晚 ${c.timeMin || 90} 分钟`)}
-        ${badge(c.symptoms && c.symptoms.length ? 'yellow' : '', syms)}
+    const sig = (c.signals || []).length ? c.signals.join('、') : '没什么';
+    el.innerHTML = `<div class="card">
+      <h3><span>今天的状态</span><span class="more">已按状态调整</span></h3>
+      <div class="badges">
+        ${badge('', `睡 ${c.sleepHours || '—'} 小时`)}
+        ${badge('', `精力 ${c.energy || 3}`)}
+        ${badge('', `可练 ${c.timeMin || 45} 分钟`)}
+        ${badge((c.signals || []).length ? 'yellow' : '', sig)}
       </div>
-      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="btn ghost small" id="btnReplan">改一下状态</button>
-        <button class="btn small blue" id="btnIntro">▶ 听今晚安排</button>
-      </div>`;
-    $('#btnReplan').onclick = () => { delete c.quick; save(); renderSnap(); renderPlan(); };
-    $('#btnIntro').onclick = playIntro;
+      <button class="btn ghost small" id="btnResetStatus" style="margin-top:12px">改一下</button>
+    </div>`;
+    $('#btnResetStatus').onclick = () => { delete c.saved; save(); renderAll(); };
   }
-  function pickOne(wrap, el) {
-    if (!wrap || !el) return;
-    wrap.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
-    el.classList.add('on');
-  }
+  function pickOne(wrap, el) { if (!wrap || !el) return; wrap.querySelectorAll('.chip').forEach(x => x.classList.remove('on')); el.classList.add('on'); }
 
-  function makePlan() {
+  function saveStatus() {
     const c = check();
-    c.quick = true;
-    c.symptoms = draft.symptoms.slice();
+    c.sleepHours = draft.sleepHours;
     c.energy = draft.energy;
     c.timeMin = draft.timeMin;
-    if (draft.sleepHours != null) c.sleepHours = draft.sleepHours;
-    if (c.symptoms.includes('肚子疼')) c.bellyLevel = c.bellyLevel || 2;
-    save();
-    renderAll();
-    Beep.unlock(); TTS.unlock(); TTS.stop();
-    speakSeq(introCueTexts(tonightPlan(state, today)));
-    toast('已按你的状态重排今晚');
+    c.signals = draft.signals.slice();
+    c.saved = true;
+    save(); renderAll(); toast('已按状态排好今天');
   }
 
-  function makeSummarySpeech() {
-    const p = tonightPlan(state, today);
-    const b = p.blocks.map((x, i) => `第${'一二三四五'[i] || (i + 1)}件，${x.title}`).join('；');
-    return `好，按你今天的状态，今晚这样排：${b}。${p.why ? '调整原因：' + p.why + '。' : ''}不用全做完，先做运动这件。`;
-  }
-  /* ---------- 今晚：方案 ---------- */
-  function renderPlan() {
+  function renderThree() {
     const c = check();
-    const el = $('#planCard');
-    if (!c.quick) {
-      el.innerHTML = `<div class="card"><h3><span>② 今晚的安排</span></h3>
-        <div class="empty">先勾一下上面那 30 秒，我给你排。</div></div>`;
-      return;
-    }
-    const blocks = plan.blocks || [];
-    const doneCount = blocks.filter(b => c.done && c.done[b.key]).length;
-    el.innerHTML = `<div class="card">
-      <h3><span>② 今晚的安排</span><span class="more">${doneCount}/${blocks.length} 完成</span></h3>
-      <div class="plan">${blocks.map(b => {
-        const dim = DIMS.find(d => d.key === b.dim) || DIMS[0];
-        const done = !!(c.done && c.done[b.key]);
-        const canVoice = !!(b.rid || b.voice);
-        return `<div class="pitem ${done ? 'done' : ''}">
-          <div class="dot" style="background:${dim.color}"></div>
-          <div class="body">
-            <div class="ttl">${esc(b.title)}</div>
-            <div class="sub">${esc(b.sub || '')}</div>
-            ${b.why ? `<div class="why">${esc(b.why)}</div>` : ''}
-            <div class="act">
-              ${canVoice ? `<button class="voicebtn" data-play="${b.key}">▶ 语音开始</button>` : ''}
-              <button class="checkbtn ${done ? 'on' : ''}" data-done="${b.key}">${done ? '已做完' : '做完了'}</button>
-            </div>
-          </div>
-        </div>`;
-      }).join('')}</div>
+    const w = WORKOUTS[plan.wid];
+    const eaten = foodTotal().kcal;
+    const doneTrain = !!c.done.train;
+    const doneSleep = !!c.done.sleep;
+    $('#threeCard').innerHTML = `<div class="card">
+      <h3><span>今天三件事</span><span class="more">做一件也算赢</span></h3>
+      <div class="rows">
+        <div class="row-item ${doneTrain ? 'done' : ''}">
+          <div class="ico">◎</div>
+          <div class="txt"><div class="t1">训练 · ${esc(plan.title)}</div>
+            <div class="t2">${plan.minutes} 分钟${plan.mode === 'light' ? ' · 减量版' : ''}</div></div>
+          ${doneTrain ? `<div class="tick on">✓</div>` : `<button class="go" id="btnStartTrain">开始</button>`}
+        </div>
+        <div class="row-item">
+          <div class="ico">◍</div>
+          <div class="txt"><div class="t1">吃对 · ${eaten} / ${plan.nutrition.target} kcal</div>
+            <div class="t2">蛋白目标 ${plan.nutrition.protein} g</div></div>
+          <button class="go" id="btnGoDiet">记一笔</button>
+        </div>
+        <div class="row-item ${doneSleep ? 'done' : ''}">
+          <div class="ico">☾</div>
+          <div class="txt"><div class="t1">睡前 · 3 分钟呼吸</div>
+            <div class="t2">关屏前做，语音带着呼吸</div></div>
+          ${doneSleep ? `<div class="tick on">✓</div>` : `<button class="go" id="btnSleep">开始</button>`}
+        </div>
+      </div>
     </div>`;
-    $$('#planCard [data-play]').forEach(btn => btn.onclick = () => startBlock(btn.dataset.play));
-    $$('#planCard [data-done]').forEach(btn => btn.onclick = () => {
-      const k = btn.dataset.done;
-      const cc = check();
-      if (cc.done[k]) delete cc.done[k]; else { cc.done[k] = Date.now(); markSession(k); }
-      save(); renderPlan(); renderProgress();
-    });
+    $('#btnStartTrain').onclick = startTraining;
+    $('#btnGoDiet').onclick = () => switchTab('tab-diet');
+    $('#btnSleep').onclick = startSleep;
   }
 
-  function markSession(key) {
-    const b = (plan.blocks || []).find(x => x.key === key);
-    if (b && b.rid) {
-      state.sessions.push({ date: today, rid: b.rid, ts: Date.now() });
-      save();
-    }
-  }
-
-  function startBlock(key) {
-    const b = (plan.blocks || []).find(x => x.key === key);
-    if (!b) return;
-    playerMeta = { key };
-    if (b.rid) {
-      const r = ROUTINES[b.rid];
-      openPlayer(r.title, b.rid, b.variant || { mode: 'full' });
-    } else if (b.voice) {
-      openPlayer('提示', b.voice.map(t => ({ k: 'say', t })).concat([{ k: 'done' }]));
-    }
-  }
-
-  function playIntro() {
-    playerMeta = { intro: true };
-    openPlayer('今晚安排', introCueTexts(plan).map(t => ({ k: 'say', t })).concat([{ k: 'done' }]));
-  }
-
-  /* ---------- 今晚：为什么 / 饮食 ---------- */
-  function renderWhy() {
-    const el = $('#whyCard');
+  function renderSide() {
     const c = check();
-    if (!c.quick) { el.innerHTML = ''; return; }
-    const items = [];
-    if (plan.why) items.push(`<div class="note info"><span class="ic">◐</span><div><b>为什么这么调：</b>${esc(plan.why)}</div></div>`);
-    (plan.notes || []).forEach(n => {
-      const ic = n.type === 'danger' ? '!' : n.type === 'warn' ? '△' : 'i';
-      items.push(`<div class="note ${n.type}"><span class="ic">${ic}</span><div>${esc(n.t)}</div></div>`);
-    });
-    el.innerHTML = items.length ? `<div class="card"><h3><span>③ 军师的话</span></h3>${items.join('')}</div>` : '';
-  }
-
-  function renderDiet() {
-    const el = $('#dietCard');
-    const c = check();
-    if (!c.quick || !(plan.diet || []).length) { el.innerHTML = ''; return; }
-    el.innerHTML = `<div class="card"><h3><span>今天吃这几样注意</span><span class="more">针对你的记录</span></h3>
-      ${plan.diet.map(d => `<div class="dietrow"><i></i><span>${esc(d.t)}</span></div>`).join('')}
-    </div>`;
-  }
-
-  /* ---------- 今晚：时间轴 ---------- */
-  function offWorkTime() {
-    const it = (state.profile.intake || {}).offWork || '';
-    if (/18:00/.test(it)) return '18:00';
-    if (/18:30/.test(it)) return '18:30';
-    if (/19:00/.test(it)) return '19:00';
-    if (/20:00/.test(it)) return '20:00';
-    return '18:30';
-  }
-  function addMin(hhmm, m) {
-    const [h, mi] = hhmm.split(':').map(Number);
-    let t = h * 60 + mi + m;
-    t = ((t % 1440) + 1440) % 1440;
-    return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
-  }
-  function renderTimeline() {
-    const start = offWorkTime();
-    const wind = state.settings.wind || '22:30';
-    const rows = [
-      [start, '到家 · 换衣服、洗手'],
-      [addMin(start, 30), '晚饭（吃热的，七分饱）'],
-      [addMin(start, 70), '运动 · 语音跟练'],
-      [addMin(start, 115), '联系一个人'],
-      [addMin(start, 140), '读 20 页'],
-      [addMin(start, 170), '整理 10 分钟 + 记账'],
-      [wind, '睡前流程 · 呼吸 + 一句']
+    const items = [
+      { k: 'relation', n: '给一个人发条消息', s: '伴侣 / 孩子 / 父母 / 朋友' },
+      { k: 'read', n: '读 20 页', s: '手机放另一个房间' },
+      { k: 'order', n: '收拾 10 分钟 + 记账', s: '桌面、账单' }
     ];
-    const now = new Date();
-    const nowMin = now.getHours() * 60 + now.getMinutes();
-    const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
-    let nowIdx = -1;
-    rows.forEach((r, i) => { if (nowMin >= toMin(r[0])) nowIdx = i; });
-    $('#tlNow').textContent = nowIdx >= 0 ? '现在在：' + rows[nowIdx][1].split(' · ')[0] : '还没开始';
-    $('#tlBody').innerHTML = rows.map((r, i) =>
-      `<div class="tlrow ${i === nowIdx ? 'now' : ''}"><div class="tm">${r[0]}</div><div class="ds">${esc(r[1])}</div></div>`
-    ).join('');
+    $('#sideCard').innerHTML = `<div class="card">
+      <h3><span>顺手三件</span><span class="more">不做也不扣分</span></h3>
+      <div class="rows">${items.map(i => `
+        <div class="row-item ${c.done[i.k] ? 'done' : ''}">
+          <div class="txt"><div class="t1">${i.n}</div><div class="t2">${i.s}</div></div>
+          <div class="tick ${c.done[i.k] ? 'on' : ''}" data-side="${i.k}">${c.done[i.k] ? '✓' : '○'}</div>
+        </div>`).join('')}</div>
+    </div>`;
+    $$('#sideCard [data-side]').forEach(t => t.onclick = () => {
+      const k = t.dataset.side;
+      const cc = check();
+      if (cc.done[k]) delete cc.done[k]; else cc.done[k] = Date.now();
+      save(); renderSide(); checkNewBadges();
+    });
   }
-  function renderTimelineNow() { if ($('#tab-tonight').classList.contains('on')) renderTimeline(); }
 
-  /* ---------- 今晚：贴士 ---------- */
   function renderTip() {
     const i = Math.abs(R.days(APP.start, today)) % TIPS.length;
-    const t = TIPS[i];
-    $('#tipRef').textContent = `第 ${t.ref} 条`;
-    $('#tipTxt').textContent = t.t;
+    $('#tipCard').innerHTML = `<div class="card"><h3><span>今天一条</span></h3>
+      <div class="hint" style="font-size:14px;color:var(--tx);line-height:1.7">${esc(TIPS[i].t)}</div></div>`;
   }
 
-  /* ---------- 教练页 ---------- */
-  function renderCoach() {
-    const list = $('#coachList');
-    const groups = [
-      ['力量（隔天做）', ['strengthA', 'strengthB', 'strengthC']],
-      ['有氧', ['walk', 'longwalk']],
-      ['腰背与恢复', ['back10', 'stretch10', 'reset90']],
-      ['睡前 / 晨间', ['sleep3', 'morning2']],
-      ['保底', ['minimal20', 'bellyWalk']]
-    ];
-    list.innerHTML = groups.map(([title, ids]) => `
-      <div class="card">
-        <h3><span>${title}</span></h3>
-        ${ids.map(id => {
-          const r = ROUTINES[id];
-          return `<div class="pitem">
-            <div class="body">
-              <div class="ttl">${esc(r.title)}</div>
-              <div class="sub">${r.minutes} 分钟 · ${r.kind === 'strength' ? '有组数、次数、组间休息口令' : '全语音引导'}</div>
-            </div>
-            <div style="display:flex;align-items:center"><button class="voicebtn" data-rid="${id}">▶</button></div>
-          </div>`;
-        }).join('')}
-      </div>`).join('');
-    $$('#coachList [data-rid]').forEach(b => b.onclick = () => manualPlay(b.dataset.rid));
-    const mode = state.settings.intensity || 'auto';
-    $$('#intensityChips .chip').forEach(c => {
-      c.classList.toggle('on', c.dataset.mode === mode);
-      c.onclick = () => {
-        state.settings.intensity = c.dataset.mode; save();
-        $$('#intensityChips .chip').forEach(x => x.classList.toggle('on', x === c));
-        toast(c.dataset.mode === 'light' ? '手动模式：减量' : c.dataset.mode === 'minimal' ? '手动模式：保底' : '手动模式：完整');
-      };
-    });
+  /* ---------- 训练 ---------- */
+  function startTraining() {
+    const w = WORKOUTS[plan.wid];
+    meta = { type: 'train', wid: plan.wid };
+    openPlayer(w.title, plan.wid, { mode: plan.mode }, state.settings.music ? w.music : null);
   }
-  function manualPlay(rid) {
-    const mode = state.settings.intensity || 'auto';
-    const v = { mode: mode === 'auto' ? 'full' : mode === 'minimal' ? 'light' : mode };
-    playerMeta = { key: 'manual:' + rid };
-    openPlayer(ROUTINES[rid].title, rid, v);
+  function startSleep() {
+    meta = { type: 'sleep' };
+    openPlayer('睡前 3 分钟', sleepTimeline(), null, state.settings.music ? 'calm' : null);
   }
 
-  /* ---------- 播放器 ---------- */
-  function openPlayer(title, ridOrTimeline, variant) {
+  function openPlayer(title, widOrTimeline, variant, musicMode) {
     $('#player').classList.add('on');
     $('#pTitle').textContent = title;
     $('#pBig').textContent = '准备开始';
     $('#pSub').textContent = '';
     $('#pBar').style.width = '0';
     $('#pPause').textContent = '暂停';
-    $('#pNote').textContent = '🔊 音量开到一半以上 · 屏幕自动常亮';
+    $('#pMusic').classList.toggle('on', !!musicMode);
     requestWake();
     player = new CoachPlayer({
-      countMode: state.settings.count || 'every',
       onState: s => {
         if (s.label) $('#pBig').textContent = s.label;
         if (s.sub !== undefined) $('#pSub').textContent = s.sub;
-        if (typeof s.pct === 'number') $('#pBar').style.width = Math.round(s.pct * 100) + '%';
-        else if (typeof s.progress === 'number') $('#pBar').style.width = Math.round(Math.min(1, s.progress) * 100) + '%';
+        if (typeof s.pct === 'number') $('#pBar').style.width = Math.round(Math.min(1, s.pct) * 100) + '%';
         $('#pPause').textContent = s.paused ? '继续' : '暂停';
       },
       onDone: () => finishPlayer()
     });
-    player.play(ridOrTimeline, variant || { mode: 'full' });
+    player.play(widOrTimeline, variant || { mode: 'full' }, { music: musicMode });
   }
 
   function finishPlayer() {
-    const meta = playerMeta || {};
-    if (meta.key && !String(meta.key).startsWith('manual:')) {
-      const c = check();
-      c.done[meta.key] = Date.now();
-      markSession(meta.key);
-      save();
-      renderPlan(); renderProgress();
-      toast('完成，记下了');
-    } else if (meta.key && String(meta.key).startsWith('manual:')) {
-      const rid = String(meta.key).slice(7);
-      state.sessions.push({ date: today, rid, ts: Date.now() });
-      save(); renderProgress();
-      toast('完成，记下了');
+    const m = meta || {};
+    const c = check();
+    if (m.type === 'train') {
+      c.done.train = Date.now();
+      state.sessions.push({ date: today, wid: m.wid, ts: Date.now() });
+      save(); toast('练完了，记下了');
+    } else if (m.type === 'sleep') {
+      c.done.sleep = Date.now();
+      save(); toast('今天到这，睡个好觉');
     }
-    setTimeout(closePlayer, 900);
+    checkNewBadges();
+    setTimeout(() => { closePlayer(); renderAll(); }, 800);
   }
 
   function closePlayer() {
     if (player) { player.stop(); player = null; }
-    TTS.stop();
+    TTS.stop(); Music.stop();
     $('#player').classList.remove('on');
-    releaseWake();
-    playerMeta = null;
+    releaseWake(); meta = null;
   }
 
   async function requestWake() {
     try {
-      if ('wakeLock' in navigator) {
-        wakeLock = await navigator.wakeLock.request('screen');
-        $('#pWake').textContent = '屏幕保持常亮中';
-      } else {
-        $('#pWake').textContent = '请保持屏幕亮着（iOS 锁屏会停语音）';
-      }
-    } catch (e) {
-      $('#pWake').textContent = '请保持屏幕亮着（锁屏会停语音）';
-    }
+      if ('wakeLock' in navigator) { wake = await navigator.wakeLock.request('screen'); $('#pNote').textContent = '屏幕保持常亮'; }
+      else $('#pNote').textContent = '请保持屏幕亮着';
+    } catch (e) { $('#pNote').textContent = '请保持屏幕亮着'; }
   }
-  function releaseWake() {
-    try { wakeLock && wakeLock.release(); } catch (e) {}
-    wakeLock = null;
-    $('#pWake').textContent = '—';
-  }
+  function releaseWake() { try { wake && wake.release(); } catch (e) {} wake = null; }
 
   function bindPlayer() {
     $('#pClose').onclick = closePlayer;
     $('#pStop').onclick = closePlayer;
     $('#pPause').onclick = () => { if (player) player.togglePause(); };
+    $('#pMusic').onclick = () => {
+      if (Music.playing) { Music.stop(); $('#pMusic').classList.remove('on'); }
+      else if (meta && meta.type === 'train') { Music.start((WORKOUTS[meta.wid] || {}).music || 'calm'); $('#pMusic').classList.add('on'); }
+      else { Music.start('calm'); $('#pMusic').classList.add('on'); }
+    };
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && $('#player').classList.contains('on')) requestWake();
     });
   }
 
-  /* ---------- 记录 ---------- */
-  function bindLog() {
-    $('#symChips').innerHTML = SYMPTOMS.concat(['无']).map(s => `<button class="chip" data-v="${s}">${s}</button>`).join('');
-    $('#bellyFoods').innerHTML = BELLY_FOODS.map(s => `<button class="chip" data-v="${s}">${s}</button>`).join('');
-    $$('#symChips .chip').forEach(b => b.onclick = () => { b.classList.toggle('on'); });
-    $$('#bellyFoods .chip').forEach(b => b.onclick = () => b.classList.toggle('on'));
-    $('#inBelly').oninput = e => $('#bellyVal').textContent = ['不疼', '很轻', '轻', '中', '较重', '很疼'][+e.target.value];
-    $('#inEnergy').oninput = e => $('#energyVal').textContent = e.target.value + ' / 5';
-    $('#inMood').oninput = e => $('#moodVal').textContent = e.target.value + ' / 10';
-    $('#inDrink').onclick = () => $('#inDrink').classList.toggle('on');
-    $('#btnSaveLog').onclick = saveLog;
-    $('#btnBelly').onclick = addBelly;
-    $$('[data-speak]').forEach(el => el.onclick = () => speak(el.dataset.speak));
-    $('#btnSaveWeek').onclick = saveWeek;
-    $('#weekDimChips').innerHTML = DIMS.map(d => `<button class="chip" data-v="${d.key}">${d.name}</button>`).join('');
-    $$('#weekDimChips .chip').forEach(b => b.onclick = () => { pickOne($('#weekDimChips'), b); });
-  }
-
-  function fillLog() {
+  function renderTrain() {
+    const w = WORKOUTS[plan.wid];
     const c = check();
-    if (c.sleepAt) $('#inSleepAt').value = c.sleepAt;
-    if (c.wakeAt) $('#inWakeAt').value = c.wakeAt;
-    if (c.weight) $('#inWeight').value = c.weight;
-    if (c.steps) $('#inSteps').value = c.steps;
-    if (c.screen) $('#inScreen').value = c.screen;
-    if (c.reading) $('#inReading').value = c.reading;
-    $('#inBelly').value = c.bellyLevel || 0;
-    $('#inBelly').dispatchEvent(new Event('input'));
-    $('#inEnergy').value = c.energy || 3;
-    $('#inEnergy').dispatchEvent(new Event('input'));
-    $('#inMood').value = c.mood || 7;
-    $('#inMood').dispatchEvent(new Event('input'));
-    $('#inDrink').classList.toggle('on', !!c.drink);
-    $$('#symChips .chip').forEach(b => b.classList.toggle('on', (c.symptoms || []).includes(b.dataset.v)));
-    $('#inNote').value = c.note || '';
-    $('#logDate').textContent = R.cn(today);
+    const done = !!c.done.train;
+    const moves = [];
+    (w.blocks || []).forEach(b => {
+      if (b.k === 'ex') {
+        const ex = EX[b.ex];
+        moves.push(`<div class="mv"><div class="n">${esc(ex.n)}</div><div class="s">${b.sets} 组 × ${b.secs} 秒 · 休 ${b.rest} 秒${b.sides ? ' ×2 侧' : ''}</div></div>`);
+      } else if (b.k === 'walk') {
+        moves.push(`<div class="mv"><div class="n">${esc(b.name)}</div><div class="s">${Math.round(b.secs / 60)} 分钟</div></div>`);
+      } else if (b.k === 'warmup' || b.k === 'cool') {
+        const ex = EX[b.ex];
+        moves.push(`<div class="mv"><div class="n">${esc(b.name || ex.n)}</div><div class="s">${b.secs >= 60 ? Math.round(b.secs / 60) + ' 分钟' : b.secs + ' 秒'}</div></div>`);
+      }
+    });
+    const hist = (state.sessions || []).slice(-7).reverse().map(s => {
+      const ww = WORKOUTS[s.wid] || {};
+      return `<div class="kv"><span>${esc(s.date.slice(5))}</span><span>${esc(ww.title || s.wid)}</span></div>`;
+    }).join('') || '<div class="empty">还没有训练记录</div>';
+
+    $('#trainCard').innerHTML = `<div class="card">
+      <h3><span>今天的训练</span><span class="more">${done ? '已完成' : '跟着时间走'}</span></h3>
+      <div class="hero" style="padding:6px 0 2px">
+        <div class="line" style="font-size:20px">${esc(plan.title)}${plan.mode === 'light' ? '（减量）' : ''}</div>
+        <div class="sub">约 ${plan.minutes} 分钟 · ${w.music === 'calm' ? '舒缓音乐' : '可开背景音乐'}</div>
+      </div>
+      <div class="q"><div class="lab"><span>背景音乐</span></div>
+        <div class="chips">
+          <button class="chip ${state.settings.music ? 'on' : ''}" id="cMusic">开</button>
+          <button class="chip ${state.settings.music ? '' : 'on'}" id="cMusicOff">关</button>
+        </div></div>
+      <button class="btn" id="btnTrainStart">${done ? '再练一次' : '开始训练'}</button>
+      <div class="hint" style="margin-top:8px">口令告诉你：第几组、做多久、休息多久。手机放旁边，屏幕自动常亮。</div>
+    </div>
+    <div class="card"><h3><span>今天练什么</span></h3>${moves.join('')}
+      <div class="hint" style="margin-top:10px">${esc(plan.why)}</div></div>
+    <div class="card"><h3><span>最近训练</span></h3>${hist}</div>`;
+    $('#btnTrainStart').onclick = startTraining;
+    $('#cMusic').onclick = () => { state.settings.music = true; save(); renderTrain(); };
+    $('#cMusicOff').onclick = () => { state.settings.music = false; save(); renderTrain(); };
   }
 
-  function renderLog() {
-    fillLog();
+  /* ---------- 饮食 ---------- */
+  function foodTotal() {
     const c = check();
-    const syms = c.symptoms || [];
-    if (syms.length && !syms.includes('无')) $$('#symChips .chip').forEach(b => b.classList.toggle('on', syms.includes(b.dataset.v)));
-    const hist = [];
-    for (let i = 0; i < 7; i++) {
-      const d = R.add(today, -i);
-      const x = state.checkins[d];
-      if (!x) { hist.push(`<div class="hist"><div class="d">${R.cn(d).split(' ')[0]}</div><div class="s" style="color:var(--dim)">没记</div></div>`); continue; }
-      const bits = [];
-      if (x.sleepHours) bits.push(`睡 ${x.sleepHours}h`);
-      if (x.energy) bits.push(`精力 ${x.energy}`);
-      if (x.weight) bits.push(`${x.weight}kg`);
-      if (x.symptoms && x.symptoms.length) bits.push(x.symptoms.join('/'));
-      hist.push(`<div class="hist"><div class="d">${R.cn(d).split(' ')[0]}</div><div class="s">${esc(bits.join(' · ') || '有记录')}</div></div>`);
-    }
-    $('#histList').innerHTML = hist.join('');
-    const bl = (state.belly || []).slice(-6).reverse();
-    $('#bellyList').innerHTML = bl.length ? bl.map(b =>
-      `<div class="hist"><div class="d">${esc(b.date.slice(5))} ${esc(b.at || '')}</div><div class="s">${esc((b.when || '') + ' · ' + (b.foods || []).join('/'))} · 疼 ${b.level}</div></div>`).join('')
-      : '<div class="hint">还没记过。</div>';
+    return (c.food || []).reduce((s, f) => ({ kcal: s.kcal + (f.kcal || 0), p: s.p + (f.p || 0) }), { kcal: 0, p: 0 });
   }
 
-  function saveLog() {
+  function renderDiet() {
     const c = check();
-    c.sleepAt = $('#inSleepAt').value || c.sleepAt;
-    c.wakeAt = $('#inWakeAt').value || c.wakeAt;
-    if (c.sleepAt && c.wakeAt) c.sleepHours = sleepHours(c) || c.sleepHours;
-    c.weight = +$('#inWeight').value || c.weight;
-    c.steps = +$('#inSteps').value || c.steps;
-    c.screen = +$('#inScreen').value || c.screen;
-    c.reading = +$('#inReading').value || c.reading;
-    c.bellyLevel = +$('#inBelly').value;
-    c.energy = +$('#inEnergy').value;
-    c.mood = +$('#inMood').value;
-    c.drink = $('#inDrink').classList.contains('on');
-    c.symptoms = $$('#symChips .chip.on').map(b => b.dataset.v).filter(s => s !== '无');
-    c.note = $('#inNote').value;
-    c.quick = true;
-    if (c.weight) { state.profile.weight = c.weight; }
-    save();
-    toast('记下了，今晚方案已更新');
-    renderAll();
+    const t = foodTotal();
+    const target = plan.nutrition.target;
+    const pct = Math.min(1, t.kcal / target);
+    const rr = 42, C = 2 * Math.PI * rr;
+    const dash = C * pct;
+    const cal = calorieTarget(state);
+    $('#calCard').innerHTML = `<div class="card">
+      <h3><span>今天的热量</span><span class="more">目标 ${target} kcal</span></h3>
+      <div class="cal">
+        <div class="ring">
+          <svg width="96" height="96" viewBox="0 0 96 96">
+            <circle cx="48" cy="48" r="${rr}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="8"/>
+            <circle cx="48" cy="48" r="${rr}" fill="none" stroke="#4cc9a4" stroke-width="8" stroke-linecap="round" stroke-dasharray="${dash} ${C}"/>
+          </svg>
+          <div class="num"><b>${t.kcal}</b><span>已摄入</span></div>
+        </div>
+        <div class="info">
+          <div class="k">还可以吃</div>
+          <div class="v"><b>${Math.max(0, target - t.kcal)}</b> kcal</div>
+          <div class="k" style="margin-top:10px">蛋白质 ${t.p} / ${plan.nutrition.protein} g</div>
+          <div class="bar"><i style="width:${Math.min(100, Math.round(t.p / plan.nutrition.protein * 100))}%"></i></div>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:10px">基础代谢 ${Math.round(bmr(state.profile))} kcal · 日常消耗约 ${cal.tdee} kcal · BMI ${plan.nutrition.bmi}</div>
+    </div>`;
+
+    const meals = plan.nutrition.meals;
+    const mealRow = (key, name, icon) => {
+      const m = meals[key];
+      return `<div class="row-item">
+        <div class="ico">${icon}</div>
+        <div class="txt"><div class="t1">${name} · ${m.kcal} kcal</div><div class="t2">${esc(m.t)}</div></div>
+        <button class="go" data-meal="${key}">吃了</button>
+      </div>`;
+    };
+    $('#mealCard').innerHTML = `<div class="card"><h3><span>今天建议这么吃</span><span class="more">点「吃了」直接记</span></h3>
+      <div class="rows">
+        ${mealRow('breakfast', '早饭', '☀')}
+        ${mealRow('lunch', '午饭', '◐')}
+        ${mealRow('dinner', '晚饭', '☾')}
+        ${mealRow('snack', '加餐', '◌')}
+      </div></div>`;
+    $$('[data-meal]').forEach(b => b.onclick = () => {
+      const m = meals[b.dataset.meal];
+      addFood({ n: m.t, kcal: m.kcal, p: m.p });
+    });
+
+    const eatenRows = (c.food || []).map((f, i) => `<div class="eaten"><span>${esc(f.n)}</span>
+      <span>${f.kcal} kcal <button data-del="${i}">删</button></span></div>`).join('');
+    $('#foodCard').innerHTML = `<div class="card">
+      <h3><span>快速记一笔</span><span class="more">点一次加一份</span></h3>
+      <div class="foods" id="foodChips">${FOODS.slice(0, 12).map((f, i) => `<button class="food" data-food="${i}">${esc(f.n)}</button>`).join('')}</div>
+      <button class="btn ghost small" id="btnMoreFood" style="margin-top:10px">更多食物</button>
+      <div style="margin-top:12px">${eatenRows || '<div class="hint">今天还没记吃的。</div>'}</div>
+    </div>`;
+    $$('#foodChips [data-food]').forEach(b => b.onclick = () => addFood(FOODS[+b.dataset.food]));
+    $('#btnMoreFood').onclick = showAllFoods;
+    $$('#foodCard [data-del]').forEach(b => b.onclick = () => {
+      const c2 = check(); c2.food.splice(+b.dataset.del, 1); save(); renderDiet(); renderThree();
+    });
+
+    const notes = plan.dietNotes || [];
+    $('#dietNoteCard').innerHTML = notes.length ? `<div class="card"><h3><span>根据你的状态</span></h3>
+      ${notes.map(n => `<div class="note info"><span>i</span><div>${esc(n)}</div></div>`).join('')}</div>` : '';
   }
 
-  function addBelly() {
-    const foods = $$('#bellyFoods .chip.on').map(b => b.dataset.v);
-    const level = +$('#inBelly').value;
-    state.belly.push({ date: today, at: $('#bellyAt').value || '', when: $('#bellyWhen').value, foods, level });
-    save(); renderLog();
-    toast('腹痛日记 +1，这是给医生看的东西');
-    $$('#bellyFoods .chip').forEach(b => b.classList.remove('on'));
+  function addFood(f) {
+    const c = check();
+    c.food.push({ n: f.n, kcal: f.kcal || 0, p: f.p || 0, at: Date.now() });
+    save(); renderDiet(); renderThree();
+    toast(`+ ${f.kcal || 0} kcal`);
   }
 
-  function saveWeek() {
-    const dim = ($('#weekDimChips .chip.on') || {}).dataset;
-    const key = 'W' + Math.ceil((R.days(APP.start, today) + 1) / 7);
-    state.weekly[key] = { date: today, dim: dim ? dim.v : '', note: $('#weekNote').value };
-    save(); renderProgress();
-    toast('本周复盘已保存');
+  function showAllFoods() {
+    const wrap = document.createElement('div');
+    wrap.className = 'card';
+    wrap.innerHTML = `<h3><span>全部食物</span></h3>
+      <div class="foods">${FOODS.map((f, i) => `<button class="food" data-food2="${i}">${esc(f.n)} · ${f.kcal}</button>`).join('')}</div>`;
+    $('#foodCard').appendChild(wrap);
+    $('#btnMoreFood').style.display = 'none';
+    $$('#foodCard [data-food2]').forEach(b => b.onclick = () => addFood(FOODS[+b.dataset.food2]));
   }
 
-  /* ---------- 进度 ---------- */
-  function bindProgress() { }
+  /* ---------- 勋章 ---------- */
+  function checkNewBadges() {
+    const list = badgeList(state, today);
+    let got = null;
+    list.forEach(b => { if (b.unlocked && !state.unlocked[b.id]) { state.unlocked[b.id] = today; got = b; } });
+    if (got) { save(); toast(`获得勋章：${got.name}`); Beep.unlock(); Beep.finish(); }
+  }
 
-  function renderProgress() {
-    const streak = checkinStreak(state, today);
-    const sess = sessionsIn(state, today, 7).length;
-    const checks = recentChecks(state, today, 14);
-    const sleeps = checks.map(x => sleepHours(x.c)).filter(v => v);
-    const sleepAvg = sleeps.length ? sleeps.reduce((a, b) => a + b, 0) / sleeps.length : null;
-    $('#stStreak').innerHTML = streak + '<small>天</small>';
-    $('#stSess').innerHTML = sess + '<small>次</small>';
-    $('#stSleep').innerHTML = sleepAvg ? sleepAvg.toFixed(1) + '<small>h</small>' : '—';
-    const w = latestWeight();
-    $('#stWeight').innerHTML = w ? w + '<small>kg</small>' : '—';
+  function renderBadge() {
+    const s = badgeStats(state, today);
+    const list = badgeList(state, today);
+    $('#badgeStats').innerHTML = `<div class="stats">
+      <div class="stat"><div class="k">连续记录</div><div class="v">${s.streak}<small>天</small></div></div>
+      <div class="stat"><div class="k">累计训练</div><div class="v">${s.allSessions}<small>次</small></div></div>
+      <div class="stat"><div class="k">本周训练</div><div class="v">${sessionsIn(state, today, 7).length}<small>次</small></div></div>
+    </div>`;
+    $('#badgeGrid').innerHTML = `<div class="card"><h3><span>勋章墙</span><span class="more">${list.filter(b => b.unlocked).length} / ${list.length}</span></h3>
+      <div class="grid3">${list.map(b => `
+        <div class="medal ${b.unlocked ? 'on' : ''}">
+          <div class="em">${b.icon}</div>
+          <div class="nm">${esc(b.name)}</div>
+          <div class="ds">${esc(b.unlocked ? b.desc : `${b.cur}/${b.goal}`)}</div>
+          ${b.unlocked ? '' : `<div class="p"><i style="width:${b.pct}%"></i></div>`}
+        </div>`).join('')}</div></div>`;
 
-    // 体重曲线
     const pts = [];
     for (let i = 29; i >= 0; i--) {
-      const d = R.add(today, -i);
-      const c = state.checkins[d];
-      if (c && c.weight) pts.push({ d, w: c.weight });
+      const d = R.add(today, -i); const c = state.checkins[d];
+      if (c && c.weight) pts.push({ w: c.weight });
     }
-    const svg = $('#weightChart');
-    if (pts.length < 2) {
-      svg.innerHTML = `<text x="150" y="55" text-anchor="middle" fill="#5d6884" font-size="11">再记一次体重，就能看到曲线（每周称一次就够）</text>`;
-    } else {
+    let svg = `<text x="150" y="55" text-anchor="middle" fill="#5b6684" font-size="11">记两次体重就能看到曲线</text>`;
+    if (pts.length >= 2) {
       const ws = pts.map(p => p.w);
       const min = Math.min(...ws) - 0.5, max = Math.max(...ws) + 0.5;
-      const P = pts.map((p, i) => {
-        const x = 12 + (i / (pts.length - 1)) * 276;
-        const y = 95 - ((p.w - min) / (max - min)) * 75;
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      }).join(' ');
-      svg.innerHTML = `<polyline fill="none" stroke="#4cc9a4" stroke-width="2.2" stroke-linejoin="round" points="${P}" />
-        <text x="12" y="12" fill="#5d6884" font-size="9">${max.toFixed(1)}</text>
-        <text x="12" y="105" fill="#5d6884" font-size="9">${min.toFixed(1)}</text>`;
+      const P = pts.map((p, i) => `${(12 + i / (pts.length - 1) * 276).toFixed(1)},${(92 - (p.w - min) / (max - min) * 70).toFixed(1)}`).join(' ');
+      svg = `<polyline fill="none" stroke="#4cc9a4" stroke-width="2.2" points="${P}"/>`;
     }
-
-    // 睡眠条
-    const sb = [];
+    const bars = [];
     for (let i = 13; i >= 0; i--) {
       const d = R.add(today, -i);
       const h = sleepHours(state.checkins[d] || {});
-      sb.push(`<div title="${h || 0}h"><i style="height:${h ? Math.min(100, (h / 9) * 100) : 2}%;${h && h < 6.5 ? 'background:linear-gradient(180deg,#f0b429,rgba(240,180,41,.2))' : ''}"></i><span>${R.wd(d) === 0 ? '日' : R.wd(d)}</span></div>`);
+      bars.push(`<div><i style="height:${h ? Math.min(100, h / 9 * 100) : 2}%"></i><span>${R.wd(d)}</span></div>`);
     }
-    $('#sleepBars').innerHTML = sb.join('');
-
-    // 五维完成度
-    const keys = ['move', 'mind', 'relation', 'order', 'growth'];
-    const doneCount = {};
-    keys.forEach(k => doneCount[k] = 0);
-    for (let i = 0; i < 7; i++) {
-      const c = state.checkins[R.add(today, -i)];
-      if (!c || !c.done) continue;
-      keys.forEach(k => { if (c.done[k]) doneCount[k]++; });
-    }
-    $('#dimBars').innerHTML = DIMS.map((d, i) => {
-      const n = doneCount[keys[i]] || 0;
-      const pc = Math.round(n / 7 * 100);
-      return `<div class="dimbar"><div class="nm">${d.name}</div>
-        <div class="track"><i style="width:${pc}%;background:${d.color}"></i></div>
-        <div class="pc">${pc}%</div></div>`;
-    }).join('');
-
-    // 洞察
-    const ins = insights(state, today);
-    const icons = { danger: '!', warn: '△', info: 'i', good: '✓' };
-    $('#insightList').innerHTML = ins.items.length
-      ? ins.items.map(x => `<div class="note ${x.type}"><span class="ic">${icons[x.type] || 'i'}</span><div>${esc(x.t)}</div></div>`).join('')
-      : `<div class="empty">记录几天之后，这里会告诉你规律。</div>`;
-
-    // 周复盘历史
-    const ws = Object.entries(state.weekly || {}).sort((a, b) => (a[1].date < b[1].date ? 1 : -1)).slice(0, 4);
-    $('#weekHistory').innerHTML = ws.length ? ws.map(([k, v]) =>
-      `<div class="hist"><div class="d">${esc(k)}</div><div class="s">${esc((DIMS.find(d => d.key === v.dim) || {}).name || '')} · ${esc(v.note || '')}</div></div>`).join('') : '';
-
-    const th = tomorrowHint(state, today);
-    $('#tomorrowHint').textContent = th.t;
-    const wcur = state.weekly['W' + Math.ceil((R.days(APP.start, today) + 1) / 7)];
-    if (wcur) { $('#weekNote').value = wcur.note || ''; const b = $(`#weekDimChips .chip[data-v="${wcur.dim}"]`); if (b) pickOne($('#weekDimChips'), b); }
-  }
-
-  function latestWeight() {
-    for (let i = 0; i < 90; i++) {
-      const c = state.checkins[R.add(today, -i)];
-      if (c && c.weight) return c.weight;
-    }
-    return null;
+    $('#chartCard').innerHTML = `<div class="card"><h3><span>体重</span><span class="more">目标 ${state.profile.targetLow}–${state.profile.targetHigh} kg</span></h3>
+      <svg class="chart" viewBox="0 0 300 105" preserveAspectRatio="none">${svg}</svg></div>
+      <div class="card"><h3><span>睡眠（近 14 天）</span></h3><div class="bars">${bars.join('')}</div></div>
+      <div class="card"><h3><span>军师看到的事</span></h3>
+        ${insights(state, today).map(x => `<div class="note ${x.type}"><span>i</span><div>${esc(x.t)}</div></div>`).join('') || '<div class="empty">记录几天后这里会有发现</div>'}</div>`;
   }
 
   /* ---------- 我 ---------- */
-  function bindMe() {
-    $('#tgVoice').onclick = () => {
+  function renderMe() {
+    const p = state.profile;
+    $('#meCard').innerHTML = `<div class="card">
+      <h3><span>我的基线</span></h3>
+      <div class="row2">
+        <div class="field"><label>年龄</label><input type="number" id="meAge" value="${p.age || 36}"></div>
+        <div class="field"><label>身高 cm</label><input type="number" id="meH" value="${p.height || 178}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>体重 kg</label><input type="number" step="0.1" id="meW" value="${p.weight || 80}"></div>
+        <div class="field"><label>目标体重 kg</label><input type="number" step="0.1" id="meTW" value="${p.targetLow || 74}"></div>
+      </div>
+      <button class="btn ghost" id="btnSaveProfile" style="margin-top:12px">保存</button>
+    </div>`;
+
+    $('#voiceCard').innerHTML = `<div class="card">
+      <h3><span>语音与音乐</span><span class="more" id="voiceName">—</span></h3>
+      <div class="row-item" style="padding-top:4px">
+        <div class="txt"><div class="t1">训练语音</div><div class="t2">只在训练时说话，其他时候不念</div></div>
+        <div class="switch ${state.settings.voice ? 'on' : ''}" id="swVoice"></div>
+      </div>
+      <div class="q"><div class="lab"><span>音色</span></div>
+        <div class="chips" id="personaChips">
+          <button class="chip" data-p="female">女声</button>
+          <button class="chip" data-p="male">男声</button>
+        </div></div>
+      <div class="row-item">
+        <div class="txt"><div class="t1">背景音乐</div><div class="t2">走路、拉伸时更明显</div></div>
+        <div class="switch ${state.settings.music ? 'on' : ''}" id="swMusic"></div>
+      </div>
+      <div class="field"><label>音乐音量 <b id="volVal">${Math.round((state.settings.musicVol || 0.07) * 100)}</b>%</label>
+        <input type="range" id="inVol" min="0" max="20" step="1" value="${Math.round((state.settings.musicVol || 0.07) * 100)}"></div>
+      <button class="btn ghost small" id="btnTestVoice">试听一句</button>
+    </div>`;
+
+    $('#dataCard').innerHTML = `<div class="card">
+      <h3><span>离线语音包</span><span class="more" id="offlineState">—</span></h3>
+      <div class="hint" style="margin-bottom:8px">下载一次，之后没网也能跟着练。</div>
+      <button class="btn ghost" id="btnOffline">下载 / 补齐离线包</button>
+    </div>
+    <div class="card">
+      <h3><span>数据</span></h3>
+      <div class="row2">
+        <button class="btn ghost" id="btnExport">导出</button>
+        <label class="btn ghost" style="text-align:center;cursor:pointer">导入<input type="file" id="fileImport" accept="application/json" style="display:none"></label>
+      </div>
+      <button class="btn ghost" id="btnReset" style="margin-top:10px;color:var(--red);border-color:rgba(255,92,122,.4)">清空所有数据</button>
+      <div class="hint" style="margin-top:8px">数据只存在这台手机里。</div>
+    </div>`;
+
+    $('#btnSaveProfile').onclick = () => {
+      state.profile.age = +$('#meAge').value || 36;
+      state.profile.height = +$('#meH').value || 178;
+      const w = +$('#meW').value;
+      if (w) { if (!state.profile.startWeight) state.profile.startWeight = w; state.profile.weight = w; }
+      state.profile.targetLow = +$('#meTW').value || 74;
+      save(); renderAll(); toast('已保存');
+    };
+    $('#swVoice').onclick = () => {
       state.settings.voice = !state.settings.voice;
-      $('#tgVoice').classList.toggle('on', state.settings.voice);
       TTS.enabled = state.settings.voice;
+      $('#swVoice').classList.toggle('on', state.settings.voice);
       save();
     };
-    const rateEl = $('#inRate');
-    if (rateEl) rateEl.oninput = e => {
-      state.settings.rate = +e.target.value;
-      TTS.rate = state.settings.rate;
-      const rv = $('#rateVal'); if (rv) rv.textContent = (+e.target.value).toFixed(2).replace(/0$/, '');
+    $('#swMusic').onclick = () => {
+      state.settings.music = !state.settings.music;
+      $('#swMusic').classList.toggle('on', state.settings.music);
+      save(); renderTrain();
+    };
+    $('#inVol').oninput = e => {
+      state.settings.musicVol = +e.target.value / 100;
+      Music.setVolume(state.settings.musicVol);
+      $('#volVal').textContent = e.target.value;
       save();
     };
-    $('#selCount').onchange = e => { state.settings.count = e.target.value; save(); };
-    $('#btnTestVoice').onclick = () => { TTS.unlock(); Beep.unlock(); TTS.stop(); speakSeq(['这是蜕变教练的声音。今晚的力量训练二十分钟，第一组，十次。预备，开始。']); };
-    $$('#personaChips .chip').forEach(b => b.onclick = () => {
-      state.settings.persona = b.dataset.p;
-      if (typeof Voice !== 'undefined') Voice.setPersona(b.dataset.p);
-      save(); renderMe();
-      TTS.unlock(); TTS.stop();
-      speakSeq(['这是蜕变教练的声音。今晚的力量训练二十分钟，第一组，十次。预备，开始。']);
+    $$('#personaChips .chip').forEach(b => {
+      b.classList.toggle('on', b.dataset.p === (state.settings.persona || 'female'));
+      b.onclick = () => {
+        state.settings.persona = b.dataset.p;
+        if (typeof Voice !== 'undefined') Voice.setPersona(b.dataset.p);
+        save(); renderMe();
+        TTS.unlock(); TTS.stop(); speakSeq(['准备好了就开始，跟着屏幕上的时间做。']);
+      };
     });
-    $('#setMove').onchange = e => { state.settings.move = e.target.value; save(); renderTimeline(); };
-    $('#setWind').onchange = e => { state.settings.wind = e.target.value; save(); renderTimeline(); };
-    $('#btnIcs').onclick = downloadIcs;
-    $('#btnOfflinePack').onclick = downloadOfflinePack;
+    $('#btnTestVoice').onclick = () => { TTS.unlock(); Beep.unlock(); TTS.stop(); speakSeq(['准备开始。跟着屏幕上的时间做，动作慢一点。']); };
+    $('#btnOffline').onclick = downloadPack;
     $('#btnExport').onclick = exportData;
     $('#fileImport').onchange = e => importData(e.target.files[0]);
-    $('#btnReset').onclick = () => {
-      if (confirm('会清空所有记录，确定？')) { localStorage.removeItem(LS); state = defaultState(); renderAll(); toast('已清空'); }
-    };
-  }
+    $('#btnReset').onclick = () => { if (confirm('清空所有记录？')) { localStorage.removeItem(LS); state = defaultState(); renderAll(); toast('已清空'); } };
 
-  function renderMe() {
-    const intake = state.profile.intake || {};
-    const fam = { '一个人': '一个人住', '和伴侣': '和伴侣', '伴侣+孩子': '伴侣 + 孩子', '和父母': '和父母', '其他': '其他' }[intake.family] || '—';
-    const rows = [
-      ['身高 / 体重', `${state.profile.height} cm / ${state.profile.weight} kg`],
-      ['下班到家', intake.offWork || '—'],
-      ['作息', `${intake.sleepAt || '—'} 睡 · ${intake.wakeAt || '—'} 起`],
-      ['早上信号', (intake.morningSign && intake.morningSign.length) ? intake.morningSign.join('、') : '—'],
-      ['早饭', intake.breakfast || '—'],
-      ['腰', intake.back || '—'],
-      ['情绪', intake.mood || '—'],
-      ['家里', fam],
-      ['最想改', intake.focus || '—'],
-      ['坚持不下来', (intake.fail && intake.fail.length) ? intake.fail.join('、') : '—'],
-      ['装备', (intake.gear && intake.gear.length) ? intake.gear.join('、') : '—']
-    ];
-    $('#profileCard').innerHTML = `
-      <h3><span>我了解的你</span><span class="more">${Object.keys(intake).length ? '已填 ' + Object.keys(intake).length + ' 项' : '还没开始'}</span></h3>
-      ${rows.map(([k, v]) => `<div class="kv"><span>${k}</span><span>${esc(v)}</span></div>`).join('')}
-      <button class="btn" id="btnIntake" style="margin-top:14px">${Object.keys(intake).length ? '重新语音问诊（会更准）' : '开始 2 分钟语音问诊'}</button>
-      <div class="hint" style="margin-top:8px">问诊会念给你听，你点选就行。答得越准，方案越像你的。</div>`;
-    $('#btnIntake').onclick = openIntake;
-    $('#tgVoice').classList.toggle('on', state.settings.voice);
-    const rateEl2 = $('#inRate');
-    if (rateEl2) {
-      rateEl2.value = state.settings.rate;
-      const rv2 = $('#rateVal'); if (rv2) rv2.textContent = (+state.settings.rate).toFixed(2);
-    }
-    $('#selCount').value = state.settings.count || 'every';
-    $('#setMove').value = state.settings.move || '19:00';
-    $('#setWind').value = state.settings.wind || '22:30';
     const useClip = typeof Voice !== 'undefined' && Voice.ready;
-    const p = state.settings.persona || 'female';
-    $$('#personaChips .chip').forEach(c => c.classList.toggle('on', c.dataset.p === p));
-    $('#voiceName').textContent = useClip ? `神经语音 ${Voice.count()} 句` : (TTS.supported ? '系统语音' : '不支持');
-    refreshOfflineStatus();
-    $('#voiceHint').textContent = TTS.supported
-      ? '第一次点▶会没声音？先点「试听一句」解锁。iOS 锁屏后语音会停，所以训练时请保持屏幕亮着。'
-      : '这台设备的浏览器不支持语音合成，会退化成提示音 + 大字提示。';
+    $('#voiceName').textContent = useClip ? `神经语音 ${Voice.count()} 句` : '系统语音';
+    refreshOffline();
   }
 
-  /* ---------- 语音问诊 ---------- */
-  let intakeIdx = 0, intakeAns = {}, intakeMulti = [];
-  function openIntake() {
-    intakeIdx = 0; intakeAns = Object.assign({}, state.profile.intake || {});
-    $('#intake').classList.add('on');
-    renderIntake();
-    TTS.unlock(); Beep.unlock();
-  }
-  function renderIntake() {
-    const q = INTAKE[intakeIdx];
-    if (!q) { finishIntake(); return; }
-    $('#intakeProg').textContent = `第 ${intakeIdx + 1} / ${INTAKE.length} 题 · 答过的会自动记住`;
-    const cur = intakeAns[q.id];
-    intakeMulti = Array.isArray(cur) ? cur.slice() : (cur ? [cur] : []);
-    $('#intakeBody').innerHTML = `
-      <div style="font-size:19px;font-weight:800;line-height:1.5">${esc(q.q)} <span class="spk" id="qSpeak" style="color:var(--amber);font-size:15px">🔊</span></div>
-      <div class="chips" style="margin-top:14px">${q.opts.map(o => `<button class="chip ${intakeMulti.includes(o) ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>
-      ${q.multi ? '<div class="hint" style="margin-top:8px">可以多选</div>' : ''}`;
-    $$('#intakeBody .chip').forEach(b => b.onclick = () => {
-      const v = b.dataset.v;
-      if (q.multi) {
-        b.classList.toggle('on');
-        intakeMulti = $$('#intakeBody .chip.on').map(x => x.dataset.v);
-      } else {
-        pickOne($('#intakeBody'), b);
-        intakeMulti = [v];
-        setTimeout(() => nextIntake(), 260);
-      }
-    });
-    $('#qSpeak').onclick = () => { TTS.unlock(); TTS.stop(); speakSeq([q.q].concat(q.opts)); };
-    $('#intakeNext').textContent = intakeIdx === INTAKE.length - 1 ? '完成' : '下一题';
-    TTS.unlock(); speakSeq([q.q]);
-  }
-  function nextIntake() {
-    const q = INTAKE[intakeIdx];
-    if (intakeMulti.length) intakeAns[q.id] = q.multi ? intakeMulti : intakeMulti[0];
-    intakeIdx++;
-    renderIntake();
-  }
-  function bindIntake() {
-    $('#intakeClose').onclick = () => { $('#intake').classList.remove('on'); TTS.stop(); };
-    $('#intakeSkip').onclick = () => { intakeIdx++; renderIntake(); };
-    $('#intakeNext').onclick = nextIntake;
-    $('#intake').onclick = e => { if (e.target.id === 'intake') { $('#intake').classList.remove('on'); TTS.stop(); } };
-  }
-  function finishIntake() {
-    state.profile.intake = intakeAns;
-    save();
-    $('#intake').classList.remove('on');
-    renderAll();
-    speak('好，我记住了。今天起，方案会跟着你的状态变。');
-    toast('画像已更新');
+  let seqToken = 0;
+  async function speakSeq(arr) {
+    const my = ++seqToken;
+    for (const t of arr) { if (my !== seqToken) return; await TTS.say(t); await new Promise(r => setTimeout(r, 120)); }
   }
 
-  /* ---------- 离线语音包 ---------- */
-  const AUDIO_CACHE = 'tb-audio-v1';
-  async function swCache() {
-    if (!('caches' in window)) return null;
-    try { return await caches.open(AUDIO_CACHE); } catch (e) { return null; }
-  }
-
-  function personaMap(m) {
-    const persona = state.settings.persona || 'female';
-    return (m && m.maps && m.maps[persona]) || {};
-  }
-
-  async function packPhrases() {
+  async function refreshOffline() {
+    const el = $('#offlineState');
+    if (!el || !('caches' in window)) return;
     try {
-      const r = await fetch('voice/manifest.json', { cache: 'no-store' });
-      if (!r.ok) return null;
-      return await r.json();
-    } catch (e) { return null; }
-  }
-
-  let offlineStat = null, offlineStatAt = 0;
-  async function refreshOfflineStatus(force) {
-    if (!force && offlineStat && Date.now() - offlineStatAt < 20000) return offlineStat;
-    const el = $('#offlineStatus');
-    if (!el) return offlineStat;
-    if (!('caches' in window)) { el.textContent = '此浏览器不支持'; return; }
-    const m = await packPhrases();
-    const map = personaMap(m);
-    const total = Object.keys(map).length;
-    if (!total) { el.textContent = '—'; return; }
-    const cache = await swCache();
-    if (!cache) { el.textContent = `0 / ${total}`; return; }
-    let have = 0;
-    const keys = [];
-    for (const t of Object.keys(map)) keys.push(new URL(map[t], location.href).href);
-    // 批量检查，避免 359 次串行太慢
-    const chunk = 30;
-    for (let i = 0; i < keys.length; i += chunk) {
-      const part = keys.slice(i, i + chunk);
-      const res = await Promise.all(part.map(k => cache.match(k)));
-      have += res.filter(Boolean).length;
-    }
-    el.textContent = `${have} / ${total}`;
-    const hint = $('#offlineHint');
-    if (hint) hint.textContent = have >= total ? '已完整离线，Mac 关机也不影响。' : '还没下完，建议在家里 Wi-Fi 下点一次。';
-    offlineStat = { have, total };
-    offlineStatAt = Date.now();
-    return offlineStat;
-  }
-
-  async function downloadOfflinePack() {
-    const btn = $('#btnOfflinePack');
-    const m = await packPhrases();
-    const map = personaMap(m);
-    const items = Object.values(map);
-    if (!items.length) { toast('语音清单还没加载好，稍后再试'); return; }
-    btn.disabled = true;
-    let done = 0, failed = 0;
-    const total = items.length;
-    const label = (n) => `下载中 ${n} / ${total}`;
-    btn.textContent = label(0);
-    const queue = items.slice();
-    const cacheRef = await caches.open(AUDIO_CACHE);
-    const worker = async () => {
-      while (queue.length) {
-        const rel = queue.shift();
-        try {
-          const res = await fetch(rel, { cache: 'no-store' });
-          if (res.ok) {
-            try {
-              const url = new URL(rel, location.href).href;
-              if (!(await cacheRef.match(url))) await cacheRef.put(url, res.clone());
-            } catch (e) {}
-          } else failed++;
-        } catch (e) { failed++; }
-        done++;
-        if (done % 9 === 0 || done === total) {
-          btn.textContent = label(done);
-          const st = $('#offlineStatus');
-          if (st) st.textContent = `${done} / ${total}`;
-        }
+      const cache = await caches.open('tb-audio-v1');
+      const m = await (await fetch('voice/manifest.json', { cache: 'no-store' })).json();
+      const map = m.maps[state.settings.persona || 'female'] || {};
+      const keys = Object.keys(map);
+      let have = 0;
+      for (let i = 0; i < keys.length; i += 30) {
+        const part = keys.slice(i, i + 30).map(t => new URL(map[t], location.href).href);
+        have += (await Promise.all(part.map(k => cache.match(k)))).filter(Boolean).length;
       }
-    };
-    await Promise.all([worker(), worker(), worker(), worker()]);
-    btn.disabled = false;
-    btn.textContent = '重新检查 / 补齐离线包';
-    offlineStat = null;
-    await refreshOfflineStatus(true);
-    renderOfflineBanner();
-    toast(failed ? `下载完成，${failed} 句失败，可再点一次补齐` : '离线包好了，之后断网也能用');
+      el.textContent = `${have} / ${keys.length}`;
+      // 顺手清掉旧版本留下的语音（省空间）
+      try {
+        const valid = new Set(Object.values(map).map(rel => new URL(rel, location.href).href));
+        const all = await cache.keys();
+        for (const req of all) {
+          if (req.url.endsWith('.mp3') && !valid.has(req.url)) await cache.delete(req);
+        }
+      } catch (e) {}
+    } catch (e) { el.textContent = '—'; }
   }
 
-  /* ---------- 提醒 / 数据 ---------- */
-  function downloadIcs() {
-    const move = state.settings.move || '19:00';
-    const wind = state.settings.wind || '22:30';
-    const dt = R.parse(today);
-    const fmt = (d, hm) => {
-      const [h, m] = hm.split(':').map(Number);
-      const x = new Date(d); x.setHours(h, m, 0, 0);
-      return x.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-    };
-    const ics = [
-      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Tuibian Coach//CN', 'CALSCALE:GREGORIAN',
-      'BEGIN:VEVENT', `UID:move-${Date.now()}@tuibian`, `DTSTAMP:${fmt(dt, '00:00')}`,
-      `DTSTART:${fmt(dt, move)}`, `DTEND:${fmt(dt, addMin(move, 45))}`,
-      'RRULE:FREQ=DAILY;COUNT=120', 'SUMMARY:运动 · 蜕变语音教练', 'DESCRIPTION:打开 App → 今晚 → 语音开始', 'END:VEVENT',
-      'BEGIN:VEVENT', `UID:wind-${Date.now()}@tuibian`, `DTSTAMP:${fmt(dt, '00:00')}`,
-      `DTSTART:${fmt(dt, wind)}`, `DTEND:${fmt(dt, addMin(wind, 10))}`,
-      'RRULE:FREQ=DAILY;COUNT=120', 'SUMMARY:睡前流程 · 3 分钟呼吸', 'END:VEVENT',
-      'BEGIN:VEVENT', `UID:week-${Date.now()}@tuibian`, `DTSTAMP:${fmt(dt, '00:00')}`,
-      `DTSTART:${fmt(R.parse(R.add(today, (7 - R.wd(today)) % 7)), '20:30')}`, `DTEND:${fmt(R.parse(R.add(today, (7 - R.wd(today)) % 7)), '21:30')}`,
-      'RRULE:FREQ=WEEKLY;COUNT=16', 'SUMMARY:周复盘 · 五条线哪条掉了', 'END:VEVENT',
-      'END:VCALENDAR'
-    ].join('\r\n');
-    const blob = new Blob([ics], { type: 'text/calendar' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = '蜕变提醒.ics';
-    a.click();
-    toast('下载好了，用日历打开导入');
+  async function downloadPack() {
+    const btn = $('#btnOffline');
+    btn.disabled = true;
+    try {
+      const m = await (await fetch('voice/manifest.json', { cache: 'no-store' })).json();
+      const map = m.maps[state.settings.persona || 'female'] || {};
+      const items = Object.values(map);
+      const cache = await caches.open('tb-audio-v1');
+      let done = 0;
+      const queue = items.slice();
+      const worker = async () => {
+        while (queue.length) {
+          const rel = queue.shift();
+          try {
+            const url = new URL(rel, location.href).href;
+            if (!(await cache.match(url))) {
+              const res = await fetch(rel, { cache: 'no-store' });
+              if (res.ok) await cache.put(url, res.clone());
+            }
+          } catch (e) {}
+          done++;
+          if (done % 10 === 0) btn.textContent = `下载中 ${done} / ${items.length}`;
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+      btn.textContent = '重新检查 / 补齐';
+      toast('离线包好了，断网也能练');
+    } catch (e) { toast('下载失败，再试一次'); }
+    btn.disabled = false;
+    refreshOffline();
   }
 
   function exportData() {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
     a.download = `蜕变数据-${today}.json`;
     a.click();
     toast('已导出');
@@ -947,26 +680,29 @@
     if (!file) return;
     const r = new FileReader();
     r.onload = () => {
-      try {
-        const s = JSON.parse(r.result);
-        state = Object.assign(defaultState(), s);
-        save(); renderAll(); toast('导入成功');
-      } catch (e) { toast('文件读不出来'); }
+      try { state = Object.assign(defaultState(), JSON.parse(r.result)); save(); renderAll(); toast('导入成功'); }
+      catch (e) { toast('文件读不出来'); }
     };
     r.readAsText(file);
   }
 
   /* ---------- 导航 ---------- */
+  function switchTab(id) {
+    const btn = $$('.nav button').find(b => b.dataset.tab === id);
+    if (btn) btn.click();
+  }
   function bindNav() {
     $$('.nav button').forEach(b => b.onclick = () => {
       $$('.nav button').forEach(x => x.classList.remove('on'));
       b.classList.add('on');
       $$('.tab').forEach(t => t.classList.remove('on'));
       $('#' + b.dataset.tab).classList.add('on');
-      window.scrollTo({ top: 0, behavior: 'auto' });
-      if (b.dataset.tab === 'tab-progress') renderProgress();
-      if (b.dataset.tab === 'tab-log') renderLog();
+      window.scrollTo({ top: 0 });
+      if (b.dataset.tab === 'tab-diet') renderDiet();
+      if (b.dataset.tab === 'tab-badge') renderBadge();
       if (b.dataset.tab === 'tab-me') renderMe();
+      if (b.dataset.tab === 'tab-train') renderTrain();
+      if (b.dataset.tab === 'tab-today') renderThree();
     });
   }
 
