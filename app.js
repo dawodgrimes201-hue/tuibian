@@ -92,7 +92,11 @@
       navigator.serviceWorker.register('sw.js').then(reg => {
         reg.addEventListener('updatefound', () => {});
       }).catch(() => {});
-      navigator.serviceWorker.addEventListener('controllerchange', () => {});
+      const hadCtrl = !!navigator.serviceWorker.controller;
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (hadCtrl && !reloaded) { reloaded = true; setTimeout(() => location.reload(), 300); }
+      });
     }
     window.addEventListener('offline', () => toast('已离线，离线包照常能用'));
     window.addEventListener('online', () => toast('网络回来了'));
@@ -809,12 +813,10 @@
   }
 
   /* ---------- 离线语音包 ---------- */
+  const AUDIO_CACHE = 'tb-audio-v1';
   async function swCache() {
     if (!('caches' in window)) return null;
-    const names = await caches.keys();
-    const mine = names.filter(n => n.startsWith('tb-offline-')).sort();
-    if (!mine.length) return null;
-    return caches.open(mine[mine.length - 1]);
+    try { return await caches.open(AUDIO_CACHE); } catch (e) { return null; }
   }
 
   function personaMap(m) {
@@ -872,12 +874,18 @@
     const label = (n) => `下载中 ${n} / ${total}`;
     btn.textContent = label(0);
     const queue = items.slice();
+    const cacheRef = await caches.open(AUDIO_CACHE);
     const worker = async () => {
       while (queue.length) {
         const rel = queue.shift();
         try {
           const res = await fetch(rel, { cache: 'no-store' });
-          if (!res.ok) failed++;
+          if (res.ok) {
+            try {
+              const url = new URL(rel, location.href).href;
+              if (!(await cacheRef.match(url))) await cacheRef.put(url, res.clone());
+            } catch (e) {}
+          } else failed++;
         } catch (e) { failed++; }
         done++;
         if (done % 9 === 0 || done === total) {
