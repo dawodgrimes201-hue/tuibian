@@ -95,7 +95,24 @@
     bindNav(); bindPlayer();
     renderAll();
     checkVersion();
+    handleStartParam();
     setInterval(() => { const t = R.today(); if (t !== today) { today = t; renderAll(); } }, 30000);
+  }
+
+  function handleStartParam() {
+    const q = new URLSearchParams(location.search);
+    const h = (location.hash || '').replace('#', '');
+    const start = q.get('start') || h;
+    if (!start) return;
+    const go = () => {
+      try {
+        if (start === 'train') { switchTab('tab-train'); setTimeout(startTraining, 500); }
+        else if (start === 'morning') { startMorning(); }
+        else if (start === 'sleep') { startSleep(); }
+        else if (start === 'diet') { switchTab('tab-diet'); }
+      } catch (e) {}
+    };
+    setTimeout(go, 700);
   }
 
   async function checkVersion() {
@@ -313,6 +330,16 @@
     $('#pPause').textContent = '暂停';
     $('#pMusic').classList.toggle('on', !!musicMode);
     requestWake();
+    const resumeOnTap = () => {
+      try {
+        if (Beep.ctx && Beep.ctx.state === 'suspended') Beep.ctx.resume();
+        TTS.unlock();
+      } catch (e) {}
+      document.removeEventListener('touchstart', resumeOnTap);
+      document.removeEventListener('click', resumeOnTap);
+    };
+    document.addEventListener('touchstart', resumeOnTap, { once: true });
+    document.addEventListener('click', resumeOnTap, { once: true });
     player = new CoachPlayer({
       onState: s => {
         if (s.label) $('#pBig').textContent = s.label;
@@ -606,6 +633,13 @@
       <button class="btn ghost" id="btnOffline">下载 / 补齐离线包</button>
     </div>
     <div class="card">
+      <h3><span>到点提醒（快捷指令）</span></h3>
+      <div class="hint" style="margin-bottom:8px">用 iPhone 快捷指令做定时提醒，点一下直接进训练，不写日历、随时能删。</div>
+      <div class="kv"><span>直接开始训练</span><span id="lnkTrain" style="font-size:11px;word-break:break-all">—</span></div>
+      <button class="btn ghost small" id="btnCopyTrain" style="margin-top:8px">复制训练链接</button>
+      <div class="hint" style="margin-top:10px">设置：快捷指令 → 自动化 → 特定时间 → 添加操作「打开 URL」→ 粘贴上面的链接 → 关掉「运行前询问」。</div>
+    </div>
+    <div class="card">
       <h3><span>数据</span></h3>
       <div class="row2">
         <button class="btn ghost" id="btnExport">导出</button>
@@ -666,6 +700,17 @@
     $('#fileImport').onchange = e => importData(e.target.files[0]);
     $('#btnReset').onclick = () => { if (confirm('清空所有记录？')) { localStorage.removeItem(LS); state = defaultState(); renderAll(); toast('已清空'); } };
 
+    const trainLink = location.origin + location.pathname + '?start=train';
+    const lnk = $('#lnkTrain'); if (lnk) lnk.textContent = trainLink;
+    const cp = $('#btnCopyTrain');
+    if (cp) cp.onclick = async () => {
+      try { await navigator.clipboard.writeText(trainLink); toast('链接已复制'); }
+      catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = trainLink; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); ta.remove(); toast('链接已复制');
+      }
+    };
     $('#buildTag').textContent = state.build || '首次运行';
     $('#btnCheckUpdate').onclick = async () => {
       try {

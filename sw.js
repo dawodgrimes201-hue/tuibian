@@ -2,7 +2,7 @@
    - 外壳（页面/脚本）跟版本走，更新时换新的
    - 语音片段单独放一个长期缓存，更新不会清掉（不用重新下离线包）
 */
-const VERSION = 'tb-offline-20261022112025';
+const VERSION = 'tb-offline-20261022112853';
 const CACHE_SHELL = VERSION;
 const CACHE_AUDIO = 'tb-audio-v1';
 const SHELL = [
