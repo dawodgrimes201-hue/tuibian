@@ -94,7 +94,27 @@
     }
     bindNav(); bindPlayer();
     renderAll();
+    checkVersion();
     setInterval(() => { const t = R.today(); if (t !== today) { today = t; renderAll(); } }, 30000);
+  }
+
+  async function checkVersion() {
+    try {
+      const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      const v = await r.json();
+      state.build = state.build || '';
+      if (v.build && v.build !== state.build) {
+        const first = !state.build;
+        state.build = v.build; save();
+        if (!first) {
+          // 清掉外壳缓存（语音缓存保留），然后刷新
+          const keys = await caches.keys();
+          for (const k of keys) if (k.startsWith('tb-offline-')) await caches.delete(k);
+          setTimeout(() => location.reload(), 300);
+        }
+      }
+    } catch (e) {}
   }
 
   function renderAll() {
@@ -593,6 +613,9 @@
       </div>
       <button class="btn ghost" id="btnReset" style="margin-top:10px;color:var(--red);border-color:rgba(255,92,122,.4)">清空所有数据</button>
       <div class="hint" style="margin-top:8px">数据只存在这台手机里。</div>
+      <hr class="hr">
+      <div class="kv"><span>版本</span><span id="buildTag">—</span></div>
+      <button class="btn ghost small" id="btnCheckUpdate" style="margin-top:8px">检查更新</button>
     </div>`;
 
     $('#btnSaveProfile').onclick = () => {
@@ -643,6 +666,24 @@
     $('#fileImport').onchange = e => importData(e.target.files[0]);
     $('#btnReset').onclick = () => { if (confirm('清空所有记录？')) { localStorage.removeItem(LS); state = defaultState(); renderAll(); toast('已清空'); } };
 
+    $('#buildTag').textContent = state.build || '首次运行';
+    $('#btnCheckUpdate').onclick = async () => {
+      try {
+        const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+        const v = await r.json();
+        if (v.build && v.build !== state.build) {
+          state.build = v.build; save();
+          const keys = await caches.keys();
+          for (const k of keys) if (k.startsWith('tb-offline-')) await caches.delete(k);
+          toast('发现新版，正在更新');
+          setTimeout(() => location.reload(), 500);
+        } else if (navigator.serviceWorker) {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) await reg.update();
+          toast('已经是最新版');
+        }
+      } catch (e) { toast('检查失败，可能没网'); }
+    };
     const useClip = typeof Voice !== 'undefined' && Voice.ready;
     $('#voiceName').textContent = useClip ? `神经语音 ${Voice.count()} 句` : '系统语音';
     refreshOffline();
