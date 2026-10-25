@@ -25,7 +25,7 @@
       v: state.v, profile: state.profile, checkins: state.checkins, sessions: state.sessions,
       weekly: state.weekly, unlocked: state.unlocked, settings: state.settings,
       ratings: state.ratings, challenge: state.challenge, customFoods: state.customFoods,
-      workoutLog: state.workoutLog, myName: state.myName, rules: state.rules, updatedAt: state.updatedAt || 0
+      workoutLog: state.workoutLog, myName: state.myName, rules: state.rules, aiDone: state.aiDone || [], updatedAt: state.updatedAt || 0
     };
   }
   let pushTimer = null, lastPushAt = 0;
@@ -69,7 +69,7 @@
     const s = d.state || {};
     const next = defaultState();
     ['profile', 'checkins', 'sessions', 'weekly', 'unlocked', 'settings', 'ratings', 'challenge',
-     'customFoods', 'workoutLog', 'myName', 'rules', 'updatedAt'].forEach(k => {
+     'customFoods', 'workoutLog', 'myName', 'rules', 'aiDone', 'updatedAt'].forEach(k => {
       if (s[k] !== undefined && s[k] !== null) next[k] = k === 'settings' ? Object.assign(next.settings, s[k]) : s[k];
     });
     next.build = state.build;
@@ -119,7 +119,7 @@
       v: 3,
       profile: Object.assign({}, PROFILE_DEFAULT, { startWeight: 80 }),
       checkins: {}, sessions: [], weekly: {}, unlocked: {},
-      settings: { voice: true, persona: 'female', music: true, musicVol: 0.18 },
+      settings: { voice: true, persona: 'female', music: true, musicVol: 0.18 }, aiDone: [],
       rules: { anchor: '20:30', weeklyGoal: 5, standardMin: 45, minMin: 30, makeup: '21:30', makeupMax: 1 }
     };
   }
@@ -179,7 +179,7 @@
         profile: Object.assign(d.profile, s.profile || {}),
         settings: mergedSettings,
         checkins: s.checkins || {}, sessions: s.sessions || [],
-        weekly: s.weekly || {}, unlocked: s.unlocked || {},
+        weekly: s.weekly || {}, unlocked: s.unlocked || {}, aiDone: s.aiDone || [],
         rules: Object.assign({ anchor: '20:30', weeklyGoal: 5, standardMin: 45, minMin: 30, makeup: '21:30', makeupMax: 1 }, s.rules || {})
       });
     } catch (e) { return defaultState(); }
@@ -202,6 +202,8 @@
     if (!state.checkins[d].done) state.checkins[d].done = {};
     if (!state.checkins[d].food) state.checkins[d].food = [];
     if (!state.checkins[d].meals) state.checkins[d].meals = {};
+    if (!state.checkins[d].five) state.checkins[d].five = { diet: {} };
+    if (!state.checkins[d].five.diet) state.checkins[d].five.diet = {};
     return state.checkins[d];
   };
 
@@ -1862,6 +1864,356 @@
   }
 
   setTimeout(renderExLibCard, 900);
+
+
+  /* ================= v4：每日五件套 + 互动首页 ================= */
+  const AI_PLAN = [
+    { d: 1, t: '上下文工程', s: '把 AI 当同事，先把话说清楚', task: '改写你最近用过的一条提示词，加上角色、目标、约束、输出格式。', out: '一条可复用的提示词' },
+    { d: 2, t: '评估', s: '别凭感觉说“好用”', task: '给同一个任务写 5 条测试用例，比较两个版本的输出。', out: '5 条测试用例 + 结论' },
+    { d: 3, t: 'RAG / 知识库', s: '让 AI 先查资料再回答', task: '画一张你的知识库结构：来源、切分、检索、引用。', out: '一张知识库结构图' },
+    { d: 4, t: '工具 / Agent', s: '从“会说”到“会做”', task: '写一个工作流：输入 → AI 处理 → 工具执行 → 检查 → 输出。', out: '一张工作流图' },
+    { d: 5, t: '模型选择', s: '成本、延迟、隐私的取舍', task: '做一个选型表：任务、模型、成本、延迟、风险。', out: '一张选型表' },
+    { d: 6, t: '搭一个小流程', s: '把一周重复的事交给 AI', task: '选一件每周都做的事，做出能跑的原型。', out: '一个能跑的原型' },
+    { d: 7, t: '复盘 + 选题', s: '决定接下来 12 周做什么', task: '写下你想做的项目：给谁、解决什么、怎么算完成。', out: '项目一句话' }
+  ];
+  const FIVE_ICON = { morning: '☯', train: '▲', ai: '✦', waist: '◒', diet: '◍' };
+  const FIVE_COLOR = { morning: '#f0b429', train: '#4cc9a4', ai: '#9b8cff', waist: '#ff9f6b', diet: '#7ed6a5' };
+
+  function fiveOf(date) {
+    const d = date || today;
+    const c = state.checkins[d] || {};
+    const done = c.done || {};
+    const diet = (c.five && c.five.diet) || {};
+    const dietN = Object.values(diet).filter(Boolean).length;
+    const items = [
+      { k: 'morning', n: '八段锦', s: '12 分钟 · 早上任意', done: !!done.morning, full: !!done.morning, action: 'morning' },
+      { k: 'train', n: '训练', s: '20:30 · 45 分钟', done: !!done.train, full: !!done.train, action: 'train' },
+      { k: 'ai', n: 'AI 学习', s: '30 分钟 · 训练后先复盘', done: !!done.ai, full: !!done.ai, action: 'ai' },
+      { k: 'waist', n: '养腰', s: '10 分钟 · 可拆开', done: !!done.waist, full: !!done.waist, action: 'waist' },
+      { k: 'diet', n: '饮食', s: dietN + '/3 条规则', done: dietN >= 2, full: dietN === 3, action: 'diet' }
+    ];
+    return { items, dietN, diet, doneN: items.filter(x => x.done).length };
+  }
+  function fiveDoneAt(date) { return fiveOf(date).doneN === 5; }
+  function currentAiDay() {
+    const done = state.aiDone || [];
+    return AI_PLAN.find(x => !done.includes(x.d)) || AI_PLAN[AI_PLAN.length - 1];
+  }
+  function daysSinceStart() { return Math.max(1, Math.abs(R.days(APP.start, today)) + 1); }
+  function phaseText() {
+    const w = Math.floor(daysSinceStart() / 7) + 1;
+    if (w <= 2) return '第 1–2 周 · 养腰期';
+    if (w <= 8) return '第 3–8 周 · 薄肌期';
+    return '第 9 周起 · 维持期';
+  }
+  function chainV4() {
+    const days = Array.from({ length: 7 }, (_, i) => R.add(today, i - 6));
+    return days.map(d => {
+      const f = fiveOf(d);
+      const cls = f.doneN === 5 ? 'done' : f.doneN > 0 ? 'part' : 'miss';
+      return `<div class="v4day ${cls} ${d === today ? 'today' : ''}"><i></i><span>${R.parse(d).getDate()}</span></div>`;
+    }).join('');
+  }
+  function ringSegments(f) {
+    const cx = 100, cy = 100, r = 78, w = 12, gap = 7;
+    return f.items.map((it, i) => {
+      const a1 = (-90 + i * 72 + gap / 2) * Math.PI / 180;
+      const a2 = (-90 + (i + 1) * 72 - gap / 2) * Math.PI / 180;
+      const p1 = [cx + r * Math.cos(a1), cy + r * Math.sin(a1)];
+      const p2 = [cx + r * Math.cos(a2), cy + r * Math.sin(a2)];
+      const col = FIVE_COLOR[it.k];
+      return `<path d="M${p1[0]} ${p1[1]} A${r} ${r} 0 0 1 ${p2[0]} ${p2[1]}" fill="none" stroke="${it.done ? col : 'rgba(255,255,255,.07)'}" stroke-width="${w}" stroke-linecap="round" class="v4seg ${it.done ? 'on' : ''}" style="filter:${it.done ? `drop-shadow(0 0 8px ${col}88)` : 'none'}"/>`;
+    }).join('');
+  }
+  function fiveRow(it) {
+    const done = it.done;
+    const isDiet = it.k === 'diet';
+    let right = '';
+    if (isDiet) {
+      const d = it.diet || {};
+      right = `<div class="v4diet">${['protein', 'veg', 'drink'].map((k, i) => `<button class="v4dietBtn ${d[k] ? 'on' : ''}" data-diet="${k}" aria-label="${['一掌蛋白', '两拳蔬菜', '不喝含糖饮料'][i]}">${['蛋白', '蔬菜', '无糖'][i]}</button>`).join('')}</div>`;
+    } else {
+      right = done ? `<span class="v4check">✓</span>` : `<button class="v4go" data-five="${it.k}">${it.k === 'train' ? '开始' : '开始'}</button>`;
+    }
+    return `<div class="v4row ${done ? 'done' : ''} ${isDiet ? 'dietrow' : ''}" data-five="${it.k}">
+      <div class="v4icon" style="--c:${FIVE_COLOR[it.k]}">${FIVE_ICON[it.k]}</div>
+      <div class="v4row-main"><b>${it.n}</b><span>${it.s}</span></div>
+      ${right}
+    </div>`;
+  }
+  function renderHero() {
+    const f = fiveOf(today);
+    const r = rulesV3();
+    const goal = +r.weeklyGoal || 5;
+    const wt = weekDoneV3();
+    const pct = Math.round(f.doneN / 5 * 100);
+    const next = f.items.find(x => !x.done);
+    const label = !next ? '今天完成 · 看周报' : '继续 · ' + next.n;
+    const left = 5 - f.doneN;
+    const day = currentAiDay();
+    const doneToday = isTrainDone(today);
+    const now = nowMinV3(), anchor = hmV3(r.anchor), makeup = hmV3(r.makeup);
+    const canMakeup = !doneToday && now >= makeup && now < makeup + 90 && weekMakeupV3() < (+r.makeupMax || 1);
+    const trainLabel = doneToday ? '已完成' : canMakeup ? '21:30 补场' : '开始';
+    $('#topDate').textContent = R.cn(today);
+    $('#hero').innerHTML = `
+    <div class="v4home ${f.doneN === 5 ? 'all-done' : ''}">
+      <section class="v4-hero">
+        <div class="v4-glow"></div>
+        <div class="v4-hero-top"><span>第 ${daysSinceStart()} 天 · ${phaseText()}</span><span>${r.anchor} 固定</span></div>
+        <div class="v4-ringwrap">
+          <svg class="v4-ring" viewBox="0 0 200 200">${ringSegments(f)}</svg>
+          <div class="v4-ring-center"><b>${f.doneN}<span>/5</span></b><em>${f.doneN === 5 ? '今天完成' : '今日五件'}</em></div>
+        </div>
+        <div class="v4-hero-copy">${f.doneN === 5 ? '五件都做了，今天这条链接上了。' : `还差 ${left} 件。${next && next.k === 'diet' ? '最后把饮食三条打勾。' : '先做下一件，别想整套。'}`}</div>
+        <button class="v4-main-btn" id="v4Next">${esc(label)}</button>
+        <div class="v4-hero-meta"><span>本周训练 ${wt}/${goal}</span><span>AI Day ${day.d}/${AI_PLAN.length} · ${esc(day.t)}</span></div>
+      </section>
+
+      <section class="v4-card v4-fivecard">
+        <div class="v4-card-head"><h3>今日五件</h3><span>${f.doneN}/5</span></div>
+        <div class="v4-progress"><i style="width:${pct}%"></i></div>
+        <div class="v4rows">${f.items.map(fiveRow).join('')}</div>
+        <div class="v4-hint">完成优先于时间；最低版也算。不补昨天。<button class="v4-inline" id="v4DietGuide">今天怎么吃 →</button></div>
+      </section>
+
+      <section class="v4-card v4-weekcard">
+        <div class="v4-card-head"><h3>最近 7 天</h3><span>五件套 ${Array.from({ length: 7 }, (_, i) => R.add(today, i - 6)).filter(d => fiveDoneAt(d)).length}/7</span></div>
+        <div class="v4chain">${chainV4()}</div>
+        <div class="v4-weekline"><span>本周训练 ${wt}/${goal}</span><span>${phaseText()}</span><span>补场 ${weekMakeupV3()}/${r.makeupMax}</span></div>
+        <div class="v4-weekbtns"><button class="v4-ghost" id="v4ToTrain">查看本周训练 →</button><button class="v4-ghost" id="v4Report">本周复盘 →</button></div>
+      </section>
+
+      <section class="v4-card v4-learncard">
+        <div class="v4-card-head"><h3>AI 学习</h3><span>Day ${day.d}/${AI_PLAN.length}</span></div>
+        <div class="v4-learn-title">${esc(day.t)}</div>
+        <div class="v4-learn-sub">${esc(day.s)}</div>
+        <div class="v4-learn-task">${esc(day.task)}</div>
+        <button class="v4-ghost" id="v4ToLearn">开始 30 分钟 →</button>
+      </section>
+
+      <section class="v4-card v4-sixcard">
+        <div class="v4-card-head"><h3>六维</h3><span>身体 · 学习 · 饮食深</span></div>
+        ${sixRows()}
+      </section>
+
+      <section class="v4-card v4-plancard">
+        <div class="v4-card-head"><h3>本周</h3><span>${phaseText()}</span></div>
+        <div class="v4-plan">${weekPlanMini()}</div>
+        <button class="v4-ghost" id="v4ToLearn2">继续 AI →</button>
+      </section>
+    </div>`;
+    hideV3('sixGrid'); hideV3('statusCard'); hideV3('threeCard'); hideV3('tipCard');
+    ['tab-diet', 'tab-badge'].forEach(id => { const el = $('#' + id); if (el) el.style.display = 'none'; });
+    const nextBtn = $('#v4Next');
+    if (nextBtn) nextBtn.onclick = () => {
+      if (!next) { openReport(); return; }
+      if (next.k === 'diet') { const row = $('.v4row.dietrow'); if (row) { row.classList.add('pulse'); setTimeout(() => row.classList.remove('pulse'), 900); } return; }
+      if (next.k === 'train') { switchTab('tab-train'); setTimeout(startTraining, 150); return; }
+      if (next.k === 'morning') { startMorning(); return; }
+      if (next.k === 'ai') { switchTab('tab-learn'); setTimeout(() => startAi(30), 200); return; }
+      if (next.k === 'waist') { openRitual('养腰 10 分钟', 10, 5, WAIST_STEPS, () => markFive('waist')); return; }
+    };
+    $$('#hero [data-five]').forEach(el => el.onclick = (ev) => {
+      if (ev.target.closest('[data-diet]')) return;
+      const k = el.dataset.five;
+      if (k === 'diet') { const row = el; if (row) { row.classList.add('pulse'); setTimeout(() => row.classList.remove('pulse'), 900); } return; }
+      if (k === 'train') { switchTab('tab-train'); setTimeout(startTraining, 120); return; }
+      if (k === 'morning') { startMorning(); return; }
+      if (k === 'ai') { switchTab('tab-learn'); setTimeout(() => startAi(30), 200); return; }
+      if (k === 'waist') { openRitual('养腰 10 分钟', 10, 5, WAIST_STEPS, () => markFive('waist')); return; }
+    });
+    $$('#hero [data-diet]').forEach(b => b.onclick = (ev) => { ev.stopPropagation(); toggleDiet(b.dataset.diet); });
+    const tt = $('#v4ToTrain'); if (tt) tt.onclick = () => switchTab('tab-train');
+    const tl = $('#v4ToLearn'); if (tl) tl.onclick = () => switchTab('tab-learn');
+    const tl2 = $('#v4ToLearn2'); if (tl2) tl2.onclick = () => switchTab('tab-learn');
+    const dg = $('#v4DietGuide'); if (dg) dg.onclick = openDietGuide;
+    const rp = $('#v4Report'); if (rp) rp.onclick = openReport;
+    renderLearn(); bindSix();
+    try { renderRulesCard(); } catch (e) {}
+    if (f.doneN === 5 && state.lastCelebrate !== today) { state.lastCelebrate = today; save({ silent: true }); setTimeout(celebrateFive, 250); }
+  }
+
+  function sixRows() {
+    const c = check(); const done = c.done || {};
+    const bodyN = [done.morning, done.train, done.waist].filter(Boolean).length;
+    const dietN = (((c.five || {}).diet) ? Object.values(c.five.diet).filter(Boolean).length : 0);
+    const rows = [
+      { k: 'body', n: '身体', v: bodyN + '/3', p: bodyN / 3, c: '#4cc9a4' },
+      { k: 'learn', n: '学习', v: done.ai ? '1/1' : '0/1', p: done.ai ? 1 : 0, c: '#9b8cff' },
+      { k: 'diet', n: '饮食', v: dietN + '/3', p: dietN / 3, c: '#f0b429' },
+      { k: 'mind', n: '心力', v: done.mind ? '已做' : '3 分钟', p: done.mind ? 1 : 0, c: '#ff9f6b' },
+      { k: 'order', n: '秩序', v: done.order ? '已做' : '10 分钟', p: done.order ? 1 : 0, c: '#7ed6a5' },
+      { k: 'relation', n: '关系', v: done.relation ? '本周已联系' : '本周 1 次', p: done.relation ? 1 : 0, c: '#f5c451' }
+    ];
+    return rows.map(x => `<div class="v4six" data-six="${x.k}">
+      <span class="v4sixdot" style="background:${x.c}"></span><b>${x.n}</b>
+      <div class="v4sixbar"><i style="width:${Math.round(x.p * 100)}%;background:${x.c}"></i></div>
+      <span class="v4sixv">${x.v}</span></div>`).join('');
+  }
+  function bindSix() {
+    $$('#hero [data-six]').forEach(el => el.onclick = () => {
+      const k = el.dataset.six;
+      if (k === 'mind') { openRitual('心力 3 分钟', 3, 3, [{ t: '坐下来，双脚踩地', s: 30 }, { t: '4-7-8 呼吸：吸 4、停 7、呼 8', s: 120 }, { t: '写一句今天最耗神的事', s: 30 }], () => markFive('mind')); return; }
+      if (k === 'order') { openRitual('秩序 10 分钟', 10, 10, [{ t: '桌面清空', s: 240 }, { t: '厨房台面复位', s: 240 }, { t: '明天的三件事', s: 120 }], () => markFive('order')); return; }
+      if (k === 'relation') { markFive('relation'); return; }
+      if (k === 'learn') { switchTab('tab-learn'); return; }
+    });
+  }
+  function weekPlanMini() {
+    const days = [['周一', '下肢/臀'], ['周二', '推 + 核心'], ['周三', '快走'], ['周四', '拉 + 核心'], ['周五', '全身'], ['周六', '长走/拉伸'], ['周日', '休息 + 复盘']];
+    return days.map(([d, n], i) => `<div class="v4-planrow ${i === (new Date(today + 'T00:00:00').getDay() + 6) % 7 ? 'today' : ''}"><span>${d}</span><b>${n}</b></div>`).join('');
+  }
+
+  const WAIST_STEPS = [
+    { t: '猫牛：慢慢拱背、塌腰', s: 60 },
+    { t: '鸟狗：对侧手脚伸出去', s: 120 },
+    { t: '死虫：腰贴地，对侧手脚', s: 120 },
+    { t: '臀桥：臀发力，停 2 秒', s: 120 },
+    { t: '髋屈肌拉伸：每侧 30 秒', s: 60 },
+    { t: '靠墙站：后脑、肩、臀贴墙', s: 120 }
+  ];
+  function markFive(k) {
+    const c = check(); c.done[k] = Date.now(); save(); renderAll();
+  }
+  function toggleDiet(k) {
+    const c = check(); c.five.diet[k] = !c.five.diet[k]; save(); renderHero();
+  }
+  function startAi(minutes) {
+    const day = currentAiDay();
+    openRitual('AI · Day ' + day.d + ' · ' + day.t, 30, 15, [
+      { t: '5 分钟：回忆昨天学的一个点', s: 300 },
+      { t: '20 分钟：' + day.task, s: 1200 },
+      { t: '5 分钟：写一句今天学到什么', s: 300 }
+    ], () => markAi(minutes >= 30), minutes);
+  }
+  function markAi(full) {
+    const c = check(); c.done.ai = Date.now(); c.aiMin = (c.aiMin || 0) + 30;
+    const day = currentAiDay();
+    if (full && !(state.aiDone || []).includes(day.d)) { state.aiDone = state.aiDone || []; state.aiDone.push(day.d); }
+    save(); renderAll();
+  }
+  function celebrateFive() {
+    if (state.lastCelebrate !== today) { state.lastCelebrate = today; save({ silent: true }); }
+    const old = $('#v4Celebrate'); if (old) old.remove();
+    const el = document.createElement('div'); el.id = 'v4Celebrate'; el.className = 'v4celebrate';
+    el.innerHTML = `<div class="v4celebrate-card"><div class="v4celebrate-ic">✓</div><b>今天完成</b><span>五件都做了，链条没断。</span></div>`;
+    document.body.appendChild(el);
+    const colors = ['#f0b429', '#4cc9a4', '#9b8cff', '#ff9f6b', '#7ed6a5'];
+    for (let i = 0; i < 44; i++) {
+      const p = document.createElement('i'); p.className = 'v4conf';
+      p.style.left = (20 + Math.random() * 60) + 'vw';
+      p.style.background = colors[i % colors.length];
+      p.style.animationDelay = (Math.random() * .35) + 's';
+      p.style.transform = `rotate(${Math.random() * 360}deg)`;
+      el.appendChild(p);
+    }
+    setTimeout(() => el.classList.add('show'), 20);
+    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 600); }, 3400);
+  }
+
+  function openRitual(title, targetMin, minMin, steps, onDone, preset) {
+    const old = $('#ritual'); if (old) old.remove();
+    let seconds = (preset || targetMin) * 60, total = seconds, timer = null, running = false, finished = false;
+    const el = document.createElement('div'); el.id = 'ritual'; el.className = 'ritual';
+    el.innerHTML = `<div class="ritual-card">
+      <div class="ritual-head"><button class="ritual-x" id="ritualClose">✕</button><div><b>${esc(title)}</b><span>${targetMin} 分钟 · 最低 ${minMin} 分钟</span></div></div>
+      <div class="ritual-ringwrap"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="84" class="rtrack"/><circle cx="100" cy="100" r="84" class="rprog" id="ritualProg"/></svg><div class="ritual-time" id="ritualTime">${pad2(Math.floor(seconds / 60))}:${pad2(seconds % 60)}</div></div>
+      <div class="ritual-steps" id="ritualSteps">${steps.map((s, i) => `<div class="ritual-step" data-s="${i}"><i>${i + 1}</i><span>${esc(s.t)}</span><em>${Math.round(s.s / 60)}′</em></div>`).join('')}</div>
+      <div class="ritual-btns"><button class="v4-main-btn" id="ritualStart">开始</button><button class="v4-ghost" id="ritualMin">只做最低 ${minMin} 分钟</button><button class="ritual-manual" id="ritualDone">已经做完了，直接打勾</button></div>
+    </div>`;
+    document.body.appendChild(el);
+    const prog = $('#ritualProg'), time = $('#ritualTime');
+    const draw = () => {
+      time.textContent = `${pad2(Math.floor(Math.max(0, seconds) / 60))}:${pad2(Math.max(0, seconds) % 60)}`;
+      const p = total ? Math.max(0, seconds) / total : 0;
+      const C = 2 * Math.PI * 84;
+      prog.style.strokeDasharray = C;
+      prog.style.strokeDashoffset = C * (1 - p);
+    };
+    draw();
+    const close = () => { clearInterval(timer); el.remove(); };
+    $('#ritualClose').onclick = close;
+    const start = (mins) => {
+      clearInterval(timer); seconds = mins * 60; total = seconds; running = true; $('#ritualStart').textContent = '暂停'; draw();
+      timer = setInterval(() => {
+        if (!running) return; seconds--; draw();
+        if (seconds <= 0) { clearInterval(timer); if (!finished) { finished = true; beep(); onDone && onDone(); close(); toast('完成，记下了'); } }
+      }, 1000);
+    };
+    $('#ritualStart').onclick = () => { if (!running) start(Math.ceil(seconds / 60)); else { running = false; $('#ritualStart').textContent = '继续'; } };
+    $('#ritualMin').onclick = () => start(minMin);
+    $('#ritualDone').onclick = () => { if (finished) return; finished = true; onDone && onDone(); close(); toast('记下了'); };
+  }
+
+
+  function openReport() {
+    const days = weekDatesV3();
+    const fiveN = days.filter(d => fiveOf(d).doneN === 5).length;
+    const trainN = days.filter(d => isTrainDone(d)).length;
+    const mins = weekMinutesV3();
+    const weight = state.profile.weight ? state.profile.weight + ' kg' : '—';
+    const waist = state.profile.waist ? state.profile.waist + ' cm' : '未记';
+    const rows = days.map(d => {
+      const f = fiveOf(d);
+      return `<div class="kv"><span>${d.slice(5)} · ${['一','二','三','四','五','六','日'][(new Date(d + 'T00:00:00').getDay() + 6) % 7]}</span><span>${f.doneN}/5 ${f.doneN === 5 ? '✓' : ''}</span></div>`;
+    }).join('');
+    openSheet('本周复盘', `<div class="v4-report">
+      <div class="v4-report-grid"><div><b>${fiveN}</b><span>五件套 / 7 天</span></div><div><b>${trainN}</b><span>训练 / 5 天</span></div><div><b>${mins}</b><span>训练分钟</span></div></div>
+      <div class="kv"><span>体重</span><span>${weight}</span></div>
+      <div class="kv"><span>腰围</span><span>${waist}</span></div>
+      <div class="v4-report-days">${rows}</div>
+      <div class="hint">只调下周内容，不动 20:30。下周只改一件事。</div>
+      <button class="btn" id="reportClose" style="margin-top:12px">收好，继续</button>
+    </div>`, sheet => { const b = $('#reportClose', sheet); if (b) b.onclick = closeSheet; });
+  }
+  function openDietGuide() {
+    openSheet('今天怎么吃', `<div class="v4-dietguide">
+      <div class="v4-dg-row"><b>每餐</b><span>一掌蛋白 · 两拳蔬菜 · 一拳主食 · 一拇指脂肪</span></div>
+      <div class="v4-dg-row"><b>每天</b><span>蛋白 96–128g；早餐先吃 25–30g；不喝含糖饮料</span></div>
+      <div class="v4-dg-row"><b>示例</b><span>早：2 个鸡蛋 + 牛奶/酸奶 + 燕麦/水果<br>午：一掌鸡肉/鱼 + 两拳蔬菜 + 一拳米饭<br>晚：豆腐/鱼 + 蔬菜 + 少量主食<br>加餐：酸奶/坚果/水果</span></div>
+      <div class="v4-dg-row"><b>外食</b><span>蒸/煮/烤，加一份蛋白，米饭减半，不点甜饮</span></div>
+      <div class="v4-dg-row"><b>记录</b><span>只打勾 3 条；腰围每 2 周一次，体重不用天天称</span></div>
+      <div class="hint">不记卡路里。每周 1 次自由餐，不补不愧疚。</div>
+    </div>`, () => {});
+  }
+
+  /* 学习页 */
+  function renderLearn() {
+    const el = $('#learnCard'); if (!el) return;
+    const day = currentAiDay();
+    const done = state.aiDone || [];
+    const doneToday = !!((check().done || {}).ai);
+    el.innerHTML = `<div class="v4-card v4-learn-hero">
+      <div class="v4-card-head"><h3>AI 学习</h3><span>Day ${day.d} / 7</span></div>
+      <div class="v4-learn-title">${esc(day.t)}</div>
+      <div class="v4-learn-sub">${esc(day.s)}</div>
+      <div class="v4-learn-task">${esc(day.task)}</div>
+      <div class="v4-learn-out">产出：${esc(day.out)}</div>
+      <div class="v4-learn-btns"><button class="v4-main-btn" id="ai30">开始 30 分钟</button><button class="v4-ghost" id="ai15">最低 15 分钟</button></div>
+      ${doneToday ? '<div class="v4-done-note">今天已经完成 AI 学习 ✓</div>' : ''}
+    </div>
+    <div class="v4-card"><div class="v4-card-head"><h3>7 天试运行</h3><span>${done.length}/7</span></div>
+      <div class="v4-days">${AI_PLAN.map(x => `<button class="v4-day ${done.includes(x.d) ? 'done' : ''} ${x.d === day.d ? 'now' : ''}" data-day="${x.d}"><em>Day ${x.d}</em><b>${esc(x.t)}</b><span>${esc(x.out)}</span></button>`).join('')}</div>
+      <div class="v4-hint">每天 30 分钟：5 分钟回忆 → 20 分钟动手 → 5 分钟记录。训练后先做 15 分钟复盘。</div>
+    </div>
+    <div class="v4-card"><div class="v4-card-head"><h3>12 周方向</h3></div>
+      <div class="v4-road">原理 → 提示/上下文 → 评估 → RAG/知识库 → 工具/Agent → 项目</div>
+      <div class="v4-hint">7 天后根据你的反馈定项目；不教“什么是 AI”这种小白内容。</div>
+    </div>`;
+    $('#ai30').onclick = () => startAi(30);
+    $('#ai15').onclick = () => startAi(15);
+    $$('#learnCard [data-day]').forEach(b => b.onclick = () => { const d = AI_PLAN.find(x => x.d === +b.dataset.day); if (d) { toast('Day ' + d.d + ' · ' + d.t); } });
+  }
+
+  function renderDiet() { hideV3('calCard'); hideV3('mealCard'); hideV3('foodCard'); hideV3('dietNoteCard'); }
+  function renderBadge() { hideV3('badgeStats'); hideV3('badgeGrid'); hideV3('chartCard'); hideV3('extraCards'); }
+  function renderExtras() {}
+  function renderThree() {}
+  function renderTip() { hideV3('tipCard'); }
+  function renderStatus() { hideV3('statusCard'); }
+  function renderSixGrid() { hideV3('sixGrid'); }
+  setInterval(() => { try { if ($('#hero') && $('#hero').innerHTML) renderHero(); } catch (e) {} }, 30000);
 
   document.addEventListener('DOMContentLoaded', init);
   if (document.readyState !== 'loading') init();
