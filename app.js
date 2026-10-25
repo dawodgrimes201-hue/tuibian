@@ -25,7 +25,7 @@
       v: state.v, profile: state.profile, checkins: state.checkins, sessions: state.sessions,
       weekly: state.weekly, unlocked: state.unlocked, settings: state.settings,
       ratings: state.ratings, challenge: state.challenge, customFoods: state.customFoods,
-      workoutLog: state.workoutLog, myName: state.myName, updatedAt: state.updatedAt || 0
+      workoutLog: state.workoutLog, myName: state.myName, rules: state.rules, updatedAt: state.updatedAt || 0
     };
   }
   let pushTimer = null, lastPushAt = 0;
@@ -69,7 +69,7 @@
     const s = d.state || {};
     const next = defaultState();
     ['profile', 'checkins', 'sessions', 'weekly', 'unlocked', 'settings', 'ratings', 'challenge',
-     'customFoods', 'workoutLog', 'myName', 'updatedAt'].forEach(k => {
+     'customFoods', 'workoutLog', 'myName', 'rules', 'updatedAt'].forEach(k => {
       if (s[k] !== undefined && s[k] !== null) next[k] = k === 'settings' ? Object.assign(next.settings, s[k]) : s[k];
     });
     next.build = state.build;
@@ -119,7 +119,8 @@
       v: 3,
       profile: Object.assign({}, PROFILE_DEFAULT, { startWeight: 80 }),
       checkins: {}, sessions: [], weekly: {}, unlocked: {},
-      settings: { voice: true, persona: 'female', music: true, musicVol: 0.18 }
+      settings: { voice: true, persona: 'female', music: true, musicVol: 0.18 },
+      rules: { anchor: '20:30', weeklyGoal: 5, standardMin: 45, minMin: 30, makeup: '21:30', makeupMax: 1 }
     };
   }
   let state = load();
@@ -178,7 +179,8 @@
         profile: Object.assign(d.profile, s.profile || {}),
         settings: mergedSettings,
         checkins: s.checkins || {}, sessions: s.sessions || [],
-        weekly: s.weekly || {}, unlocked: s.unlocked || {}
+        weekly: s.weekly || {}, unlocked: s.unlocked || {},
+        rules: Object.assign({ anchor: '20:30', weeklyGoal: 5, standardMin: 45, minMin: 30, makeup: '21:30', makeupMax: 1 }, s.rules || {})
       });
     } catch (e) { return defaultState(); }
   }
@@ -1622,6 +1624,160 @@
   }
 
 
+
+
+  /* ================= v3：固定 20:30 纪律版 ================= */
+  const V3_DEFAULTS = { anchor: '20:30', weeklyGoal: 5, standardMin: 45, minMin: 30, makeup: '21:30', makeupMax: 1 };
+  function rulesV3() { return Object.assign({}, V3_DEFAULTS, state.rules || {}); }
+  function hmV3(t) { const a = String(t || '0:0').split(':').map(Number); return (a[0] || 0) * 60 + (a[1] || 0); }
+  function nowMinV3() { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+  function weekStartV3() { const d = new Date(today + 'T00:00:00'); return R.add(today, -((d.getDay() + 6) % 7)); }
+  function weekDatesV3() { const st = weekStartV3(); return Array.from({ length: 7 }, (_, i) => R.add(st, i)); }
+  function isTrainDone(d) { const c = state.checkins && state.checkins[d]; return !!(c && c.done && c.done.train); }
+  function isMakeupDay(d) { const c = state.checkins && state.checkins[d]; return !!(c && c.makeup); }
+  function weekDoneV3() { return weekDatesV3().filter(isTrainDone).length; }
+  function weekMakeupV3() { return weekDatesV3().filter(isMakeupDay).length; }
+  function sessionDurV3(s) { if (s && typeof s.dur === 'number') return s.dur; const w = WORKOUTS[s && s.wid] || {}; return w.minutes || 30; }
+  function weekMinutesV3() { const set = new Set(weekDatesV3()); return (state.sessions || []).filter(s => set.has(s.date)).reduce((a, s) => a + sessionDurV3(s), 0); }
+  function weekDoneAtV3(st) { return Array.from({ length: 7 }, (_, i) => R.add(st, i)).filter(isTrainDone).length; }
+  function weekStreakV3() {
+    const goal = +rulesV3().weeklyGoal || 5;
+    let st = weekStartV3(), n = 0;
+    if (weekDoneAtV3(st) < goal) st = R.add(st, -7);
+    for (let i = 0; i < 52; i++) {
+      if (weekDoneAtV3(st) < goal) break;
+      n++; st = R.add(st, -7);
+    }
+    return n;
+  }
+  function padV3(n) { return String(n).padStart(2, '0'); }
+  function chainHtmlV3() {
+    const days = Array.from({ length: 14 }, (_, i) => R.add(today, i - 13));
+    return days.map(d => {
+      let cls = 'v3day';
+      if (isTrainDone(d)) cls += isMakeupDay(d) ? ' makeup' : ' done';
+      else cls += ' miss';
+      if (d === today) cls += ' today';
+      return `<div class="${cls}"><i></i><span>${R.parse(d).getDate()}</span></div>`;
+    }).join('');
+  }
+  function hideV3(id) { const el = $('#' + id); if (el) el.style.display = 'none'; }
+  function renderSixGrid() { hideV3('sixGrid'); }
+  function renderStatus() { hideV3('statusCard'); }
+  function renderThree() { hideV3('threeCard'); }
+  function renderTip() { hideV3('tipCard'); }
+
+  function renderRulesCard(force) {
+    const el = $('#rulesCard'); if (!el) return;
+    if (!force && el.dataset.ready === '1') return;
+    el.dataset.ready = '1';
+    const r = rulesV3();
+    el.innerHTML = `<div class="card">
+      <h3><span>纪律规则</span><span class="more">改完立即生效</span></h3>
+      <div class="row2">
+        <div class="field"><label>开始时间</label><input type="time" id="rAnchor" value="${r.anchor}"></div>
+        <div class="field"><label>补场时间</label><input type="time" id="rMakeup" value="${r.makeup}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>每周最少天数</label><input type="number" id="rGoal" min="1" max="7" value="${r.weeklyGoal}"></div>
+        <div class="field"><label>标准时长（分钟）</label><input type="number" id="rStd" min="10" max="120" value="${r.standardMin}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>最低算完成（分钟）</label><input type="number" id="rMin" min="5" max="90" value="${r.minMin}"></div>
+        <div class="field"><label>补场每周次数</label><input type="number" id="rMax" min="0" max="3" value="${r.makeupMax}"></div>
+      </div>
+      <button class="btn ghost" id="rSaveRules">保存规则</button>
+      <div class="hint" style="margin-top:8px">20:20 准备、20:30 开始、21:30 补场。改时间/天数/时长不用重新部署。</div>
+    </div>`;
+    $('#rSaveRules').onclick = () => {
+      state.rules = {
+        anchor: $('#rAnchor').value || '20:30',
+        makeup: $('#rMakeup').value || '21:30',
+        weeklyGoal: Math.max(1, Math.min(7, +$('#rGoal').value || 5)),
+        standardMin: Math.max(10, Math.min(120, +$('#rStd').value || 45)),
+        minMin: Math.max(5, Math.min(90, +$('#rMin').value || 30)),
+        makeupMax: Math.max(0, Math.min(3, +$('#rMax').value || 1))
+      };
+      save(); renderRulesCard(true); renderAll(); toast('规则已保存');
+    };
+  }
+
+  function renderHero() {
+    const c = check();
+    const r = rulesV3();
+    const doneToday = isTrainDone(today);
+    const goal = +r.weeklyGoal || 5;
+    const done = weekDoneV3();
+    const left = Math.max(0, goal - done);
+    const now = nowMinV3(), anchor = hmV3(r.anchor), makeup = hmV3(r.makeup);
+    const makeupUsed = weekMakeupV3();
+    const canMakeup = !doneToday && now >= makeup && now < makeup + 90 && makeupUsed < (+r.makeupMax || 1);
+    const closed = !doneToday && now >= makeup + 120;
+    const minutes = weekMinutesV3();
+    const weeks = weekStreakV3();
+    let label = `开始 · ${r.standardMin} 分钟`, disabled = false, stop = false;
+    if (doneToday) { label = '今天已完成 ✓'; disabled = true; }
+    else if (plan.mode === 'stop') { label = '今天先停 · 看医生'; disabled = true; stop = true; }
+    else if (canMakeup) { label = `${r.makeup} 补场（本周还剩 ${Math.max(0, (+r.makeupMax || 1) - makeupUsed)} 次）`; }
+    else if (closed) { label = '今天断了 · 明天接上'; disabled = true; }
+    else if (now < anchor) { label = `提前开始 · ${r.standardMin} 分钟`; }
+    let copy;
+    if (doneToday) copy = isMakeupDay(today) ? '补场也算数。明天别断。' : '今天这条链接上了。';
+    else if (stop) copy = '身体信号优先。先看医生，别硬练。';
+    else if (closed) copy = '补场窗口也过了。今天断了，明天必须接上，别断第二次。';
+    else if (left <= 0) copy = '本周已经达标。剩下的日子算送的。';
+    else if (canMakeup) copy = `20:30 没做，21:30 是最后一次补场。本周还差 ${left} 天。`;
+    else if (now >= anchor) copy = `本周还差 ${left} 天。别想周日一次补。`;
+    else copy = `20:30 开始。现在先换衣服、铺垫子，手机放远。本周还差 ${left} 天。`;
+    $('#topDate').textContent = R.cn(today);
+    $('#hero').innerHTML = `<div class="card v3home">
+      <div class="v3top"><span>固定锚点 · 第 ${Math.max(1, Math.abs(R.days(APP.start, today)) + 1)} 天</span><span>${r.anchor}</span></div>
+      <div class="v3time">${r.anchor}</div>
+      <div class="v3week"><div class="v3wl"><b>${done} / ${goal}</b> 本周完成<span>${left ? '还差 ' + left + ' 天' : '已达标'}</span></div>
+        <div class="v3bar"><i style="width:${Math.min(100, Math.round(done / goal * 100))}%"></i></div></div>
+      <button class="v3btn ${disabled ? 'off' : ''}" id="v3Start" ${disabled ? 'disabled' : ''}>${label}</button>
+      <div class="v3copy">${esc(copy)}</div>
+      <div class="v3chain">${chainHtmlV3()}</div>
+      <div class="v3meta"><span>本周 ${minutes} 分钟</span><span>连续 ${weeks} 周达标</span><span>补场 ${makeupUsed}/${r.makeupMax}</span></div>
+    </div>`;
+    hideV3('sixGrid'); hideV3('statusCard'); hideV3('threeCard'); hideV3('tipCard');
+    const btn = $('#v3Start');
+    if (btn) btn.onclick = () => { if (!disabled) startTraining(); };
+    renderRulesCard();
+  }
+
+  function startTraining() {
+    if (plan.mode === 'stop') { toast('今天先别练，身体信号需要先看医生'); return; }
+    const r = rulesV3(); const now = nowMinV3(); const makeupAt = hmV3(r.makeup);
+    const isMakeup = now >= makeupAt && now < makeupAt + 90;
+    if (isMakeup && weekMakeupV3() >= (+r.makeupMax || 1)) { toast('本周补场已经用完了'); return; }
+    if (isTrainDone(today)) { toast('今天已经完成了'); return; }
+    const w = WORKOUTS[plan.wid];
+    meta = { type: 'train', wid: plan.wid, startedAt: Date.now(), makeup: isMakeup };
+    openPlayer(w.title, plan.wid, { mode: plan.mode, prog: plan.prog, targetMin: +r.standardMin || 45 }, state.settings.music ? resolveSound(w.music) : null);
+  }
+
+  function finishPlayer() {
+    const m = meta || {};
+    const c = check();
+    if (m.type === 'train') {
+      c.done.train = Date.now();
+      if (m.makeup) c.makeup = Date.now();
+      const dur = Math.max(1, Math.round((Date.now() - (m.startedAt || Date.now())) / 60000));
+      state.sessions.push({ date: today, wid: m.wid, ts: Date.now(), dur, makeup: !!m.makeup });
+      save(); toast(`完成 ${dur} 分钟，记下了`);
+    } else if (m.type === 'sleep') {
+      c.done.sleep = Date.now(); save(); toast('今天到这，睡个好觉');
+    } else if (m.type === 'morning') {
+      c.done.morning = Date.now();
+      state.sessions.push({ date: today, wid: m.wid, ts: Date.now(), dur: WORKOUTS[m.wid] ? WORKOUTS[m.wid].minutes : 10 });
+      save(); toast('八段锦做完了');
+    }
+    checkNewBadges();
+    setTimeout(() => { closePlayer(); renderAll(); }, 800);
+  }
+
+  setInterval(() => { try { if ($('#hero') && $('#hero').innerHTML) renderHero(); } catch (e) {} }, 30000);
 
   document.addEventListener('DOMContentLoaded', init);
   if (document.readyState !== 'loading') init();
