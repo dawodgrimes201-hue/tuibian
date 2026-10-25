@@ -1342,9 +1342,9 @@
     const done = !!c.done.train;
     const moves = [];
     (w.blocks || []).forEach(b => {
-      if (b.k === 'ex') { const ex = EX[b.ex]; moves.push(`<div class="mv"><div class="n">${esc(ex.n)}</div><div class="s">${b.sets} 组 × ${b.secs} 秒 · 休 ${b.rest} 秒${b.sides ? ' ×2 侧' : ''}</div><div class="cue">${esc(ex.cue)}</div></div>`); }
+      if (b.k === 'ex') { const ex = EX[b.ex]; const lib = EX_LIB_MAP[b.ex]; moves.push(`<div class="mv"><div class="n">${esc(ex.n)}</div><div class="s">${b.sets} 组 × ${b.secs} 秒 · 休 ${b.rest} 秒${b.sides ? ' ×2 侧' : ''}</div><div class="cue">${esc(ex.cue)}</div>${lib ? `<button class="exlook" data-lib="${lib}">看演示</button>` : ''}</div>`); }
       else if (b.k === 'walk') moves.push(`<div class="mv"><div class="n">${esc(b.name)}</div><div class="s">${Math.round(b.secs / 60)} 分钟</div></div>`);
-      else if (b.k === 'warmup' || b.k === 'cool') { const ex = EX[b.ex]; moves.push(`<div class="mv"><div class="n">${esc(b.name || ex.n)}</div><div class="s">${b.secs >= 60 ? Math.round(b.secs / 60) + ' 分钟' : b.secs + ' 秒'}</div></div>`); }
+      else if (b.k === 'warmup' || b.k === 'cool') { const ex = EX[b.ex]; const lib = EX_LIB_MAP[b.ex]; moves.push(`<div class="mv"><div class="n">${esc(b.name || ex.n)}</div><div class="s">${b.secs >= 60 ? Math.round(b.secs / 60) + ' 分钟' : b.secs + ' 秒'}</div>${lib ? `<button class="exlook" data-lib="${lib}">看演示</button>` : ''}</div>`); }
     });
     const logs = (state.workoutLog || {})[today] || [];
     const hist = (state.sessions || []).slice(-7).reverse().map(s => { const ww = WORKOUTS[s.wid] || {}; return `<div class="kv"><span>${esc(s.date.slice(5))}</span><span>${esc(ww.title || s.wid)}</span></div>`; }).join('') || '<div class="empty">还没有训练记录</div>';
@@ -1353,7 +1353,7 @@
     $('#trainCard').innerHTML = `<div class="card">
       <h3><span>今天的训练</span><span class="more">${done ? '已完成' : (plan.mode === 'stop' ? '今天先不练' : '跟着时间走')}</span></h3>
       <div class="tbig">${esc(plan.title)}${plan.mode === 'light' ? '（减量）' : ''}</div>
-      <div class="hint">${plan.mode === 'stop' ? esc(plan.why) : '约 ' + plan.minutes + ' 分钟 · ' + (w.music === 'calm' ? '舒缓音乐' : '可开背景音乐')}</div>
+      <div class="hint">${plan.mode === 'stop' ? esc(plan.why) : '约 ' + (typeof rulesV3 === 'function' ? rulesV3().standardMin : plan.minutes) + ' 分钟 · ' + (w.music === 'calm' ? '舒缓音乐' : '可开背景音乐')}</div>
       ${plan.mode === 'stop' ? '' : `<button class="btn" id="btnTrainStart" style="margin-top:12px">${done ? '再练一次' : '▶ 开始训练'}</button>`}
       <div class="trow">
         <button class="tbtn" id="btnRest">⏱ 组间计时</button>
@@ -1368,6 +1368,7 @@
     <div class="card"><h3><span>晨间八段锦</span><span class="more">约 ${plan.morning.minutes} 分钟</span></h3><div class="hint">八式，每式约一分钟，跟着口令和呼吸做。早上做最好，晚上放松也行。</div><button class="btn ghost" id="btnMorning2" style="margin-top:10px">开始八段锦</button></div>
     <div class="card"><h3><span>最近训练</span></h3>${hist}</div>`;
     const bt = $('#btnTrainStart'); if (bt) bt.onclick = startTraining;
+    $$('#trainCard [data-lib]').forEach(b => b.onclick = async () => { await openExLib(); showExDetail(b.dataset.lib); });
     $('#btnRest').onclick = () => openTimer(90);
     $('#btnLog').onclick = openTrainLog;
     const bm = $('#btnMorning2'); if (bm) bm.onclick = startMorning;
@@ -1778,6 +1779,92 @@
   }
 
   setInterval(() => { try { if ($('#hero') && $('#hero').innerHTML) renderHero(); } catch (e) {} }, 30000);
+
+
+  /* ================= 动作库（家用器械） ================= */
+  let EXDB = null;
+  const EX_LIB_MAP = { squat: 'Bodyweight_Squat', pushup: 'Pushups', bridge: 'Butt_Lift_Bridge', lunge: 'Dumbbell_Lunges', plank: 'Plank', stepup: 'Dumbbell_Step_Ups', superman: 'Superman', deadbug: 'Dead_Bug', calf: 'Standing_Dumbbell_Calf_Raise' };
+  let exState = { group: '全部', eq: '全部', q: '' };
+  const EX_GROUPS = ['全部', '下肢/臀', '胸/肩', '背', '核心', '全身', '拉伸'];
+  const EX_EQS = ['全部', '哑铃', '弹力带', '壶铃', '徒手'];
+
+  function renderExLibCard() {
+    const el = $('#exLibCard'); if (!el) return;
+    el.innerHTML = `<div class="card">
+      <h3><span>动作库</span><span class="more">46 个家用动作</span></h3>
+      <div class="hint">哑铃、弹力带、壶铃、徒手都有，点开有动作演示和步骤。</div>
+      <button class="btn ghost" id="btnExLib" style="margin-top:10px">打开动作库</button>
+    </div>`;
+    $('#btnExLib').onclick = openExLib;
+  }
+
+  async function loadExDB() {
+    if (EXDB) return EXDB;
+    const r = await fetch('ex.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('ex.json ' + r.status);
+    EXDB = await r.json();
+    return EXDB;
+  }
+
+  function exCard(it) {
+    return `<div class="excard" data-id="${it.id}">
+      <div class="exthumb"><img src="${it.img[0]}" alt="${esc(it.n)} 起始" loading="lazy"><img class="f1" src="${it.img[1]}" alt="${esc(it.n)} 结束" loading="lazy"></div>
+      <div class="exname">${esc(it.n)}</div>
+      <div class="exmeta">${esc(it.target)} · ${esc(it.eqLabel)}</div>
+    </div>`;
+  }
+
+  function renderExGrid() {
+    const box = $('#exGrid'); if (!box) return;
+    const q = exState.q.trim().toLowerCase();
+    const list = (EXDB.items || []).filter(it => {
+      if (exState.group !== '全部' && it.group !== exState.group) return false;
+      if (exState.eq !== '全部' && it.eqLabel.indexOf(exState.eq) < 0) return false;
+      if (q && !(it.n + ' ' + it.en + ' ' + it.target).toLowerCase().includes(q)) return false;
+      return true;
+    });
+    box.innerHTML = list.length ? list.map(exCard).join('') : '<div class="empty">没找到，换个词试试</div>';
+    $$('#exGrid .excard').forEach(el => el.onclick = () => showExDetail(el.dataset.id));
+    const cnt = $('#exLibCount'); if (cnt) cnt.textContent = list.length + ' 个';
+  }
+
+  function showExDetail(id) {
+    const it = (EXDB.items || []).find(x => x.id === id); if (!it) return;
+    const body = `<div class="exd-imgs"><figure><img src="${it.img[0]}" alt="起始"><figcaption>起始</figcaption></figure><figure><img src="${it.img[1]}" alt="结束"><figcaption>结束</figcaption></figure></div>
+      <div class="exd-title">${esc(it.n)}</div>
+      <div class="exd-meta">${esc(it.en)} · ${esc(it.eqLabel)} · ${esc(it.target)}</div>
+      <ol class="exd-steps">${it.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+      <div class="hint">动作以不痛为准；腰、膝、肩有不适就停。图片和数据：free-exercise-db（Public Domain）。</div>
+      <button class="btn" id="exTimer" style="margin-top:12px">⏱ 40 秒计时</button>`;
+    openSheet(it.n, body, sheet => {
+      const t = $('#exTimer', sheet); if (t) t.onclick = () => { closeSheet(); openTimer(40); };
+    });
+  }
+
+  async function openExLib() {
+    let ov = $('#exLib');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'exLib'; ov.className = 'exlib';
+      ov.innerHTML = `<div class="exlib-top"><button id="exLibClose" aria-label="关闭">‹</button><div class="exlib-title">动作库</div><div id="exLibCount" class="exlib-count"></div></div>
+        <div class="exlib-body">
+          <input class="search" id="exLibQ" placeholder="搜索：深蹲、划船、核心、哑铃">
+          <div class="exlib-chips" id="exGroup">${EX_GROUPS.map(g => `<button data-g="${g}" class="${g === '全部' ? 'on' : ''}">${g}</button>`).join('')}</div>
+          <div class="exlib-chips" id="exEq">${EX_EQS.map(e => `<button data-e="${e}" class="${e === '全部' ? 'on' : ''}">${e}</button>`).join('')}</div>
+          <div class="exlib-grid" id="exGrid"><div class="empty">加载中…</div></div>
+          <div class="exlib-foot">动作图片与数据：free-exercise-db（Public Domain）· 仅作演示，疼痛请停</div>
+        </div>`;
+      document.body.appendChild(ov);
+      $('#exLibClose').onclick = () => { ov.classList.remove('on'); };
+      $('#exLibQ').oninput = e => { exState.q = e.target.value; renderExGrid(); };
+      $$('#exGroup button').forEach(b => b.onclick = () => { exState.group = b.dataset.g; $$('#exGroup button').forEach(x => x.classList.toggle('on', x === b)); renderExGrid(); });
+      $$('#exEq button').forEach(b => b.onclick = () => { exState.eq = b.dataset.e; $$('#exEq button').forEach(x => x.classList.toggle('on', x === b)); renderExGrid(); });
+    }
+    ov.classList.add('on');
+    try { await loadExDB(); renderExGrid(); } catch (e) { const box = $('#exGrid'); if (box) box.innerHTML = '<div class="empty">动作库加载失败，检查网络后再试</div>'; }
+  }
+
+  setTimeout(renderExLibCard, 900);
 
   document.addEventListener('DOMContentLoaded', init);
   if (document.readyState !== 'loading') init();
