@@ -6,12 +6,120 @@
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+  /* 数据层：本机 Mac 用 /api/state；CloudBase 静态托管用云函数 state（免 Mac） */
+  const STATE_API = '/api/state';
+  const ROLE = 'me';
+  const IS_CLOUD = true;   // GitHub Pages 构建：数据走 CloudBase HTTP API
+  const CLOUD_API = 'https://tuibian-d3gj3n4b28974e14a.service.tcloudbase.com/stateapi';
+  const CLOUD_KEY = '8f3c2a7d91b64e05a1c7d2e934b8f60c';
+  async function cbState(action, payload) {
+    const r = await fetch(CLOUD_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ key: CLOUD_KEY, action }, payload || {}))
+    });
+    return r.ok ? await r.json() : {};
+  }
+  function fullState() {
+    return {
+      v: state.v, profile: state.profile, checkins: state.checkins, sessions: state.sessions,
+      weekly: state.weekly, unlocked: state.unlocked, settings: state.settings,
+      ratings: state.ratings, challenge: state.challenge, customFoods: state.customFoods,
+      workoutLog: state.workoutLog, myName: state.myName, updatedAt: state.updatedAt || 0
+    };
+  }
+  let pushTimer = null, lastPushAt = 0;
+  function scheduleStatePush() {
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => { pushState(); }, 2000);
+  }
+  async function pushState() {
+    try {
+      state.updatedAt = Date.now();
+      if (IS_CLOUD) {
+        const res = await cbState('put', { state: fullState(), updated: state.updatedAt });
+        if (!res || !res.ok) return false;
+      } else {
+        const r = await fetch(STATE_API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: ROLE, state: fullState(), updated: state.updatedAt })
+        });
+        if (!r.ok) return false;
+      }
+      lastPushAt = Date.now(); updateBackupLabel();
+      save({ silent: true });   // 只把 updatedAt 落盘，不再触发推送
+      return true;
+    } catch (e) { console.warn('pushState', e); return false; }
+  }
+  async function pullState(quiet) {
+    try {
+      if (IS_CLOUD) {
+        const res = await cbState('get', {});
+        if (!res || !res.ok) { if (!quiet) toast('连不上云备份'); return null; }
+        return { ok: true, state: res.state || null, updated: res.updated || null };
+      }
+      const r = await fetch(STATE_API + '?role=' + ROLE, { cache: 'no-store' });
+      if (!r.ok) { if (!quiet) toast('连不上 Mac 上的备份'); return null; }
+      const d = await r.json();
+      return d && d.ok ? d : null;
+    } catch (e) { if (!quiet) toast('连不上备份'); return null; }
+  }
+  function applyRestore(d) {
+    const s = d.state || {};
+    const next = defaultState();
+    ['profile', 'checkins', 'sessions', 'weekly', 'unlocked', 'settings', 'ratings', 'challenge',
+     'customFoods', 'workoutLog', 'myName', 'updatedAt'].forEach(k => {
+      if (s[k] !== undefined && s[k] !== null) next[k] = k === 'settings' ? Object.assign(next.settings, s[k]) : s[k];
+    });
+    next.build = state.build;
+    state = next;
+    save(); renderAll();
+    toast('已从 Mac 恢复');
+  }
+  function updateBackupLabel() {
+    const el = $('#backupAt'); if (!el) return;
+    const t = lastPushAt || state.updatedAt || 0;
+    el.textContent = t ? new Date(t).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '还没有';
+  }
+  async function maybeRestore() {
+    const d = await pullState(true);
+    if (!d) return;
+    const localDays = Object.keys(state.checkins || {}).length;
+    const s = d.state;
+    if (!s) { pushState(); return; }                 // 主库还没有：用本机初始化
+    const serverDays = Object.keys(s.checkins || {}).length;
+    if (!localDays && serverDays) { applyRestore(d); return; }
+    if ((d.updated || 0) > (state.updatedAt || 0) + 60000 && serverDays >= localDays && serverDays > 0) {
+      openSheet('Mac 上有更新的备份', `<div class="hint">Mac 上有一份 ${serverDays} 天记录的备份，更新于 ${new Date((d.updated || 0)).toLocaleString('zh-CN')}；这台手机本地是 ${localDays} 天。</div>
+        <button class="btn" id="rsYes" style="margin-top:12px">用 Mac 上的覆盖本机</button>
+        <button class="btn ghost" id="rsNo" style="margin-top:8px">保留本机</button>`, sheet => {
+        $('#rsYes', sheet).onclick = () => { applyRestore(d); closeSheet(); };
+        $('#rsNo', sheet).onclick = () => { closeSheet(); pushState(); };
+      });
+      return;
+    }
+    pushState();                                     // 本机不旧：把本机推上去
+  }
+  async function openRestoreSheet() {
+    const d = await pullState(false);
+    if (!d) return;
+    if (!d.state) { toast('Mac 上还没有备份'); return; }
+    const days = Object.keys(d.state.checkins || {}).length;
+    openSheet('从 Mac 恢复', `<div class="hint">Mac 上：${days} 天记录，更新于 ${new Date(d.updated || 0).toLocaleString('zh-CN')}。<br>恢复会覆盖这台手机当前的数据。</div>
+      <button class="btn" id="rsYes" style="margin-top:12px">覆盖本机</button>
+      <button class="btn ghost" id="rsNo" style="margin-top:8px">取消</button>`, sheet => {
+      $('#rsYes', sheet).onclick = () => { applyRestore(d); closeSheet(); };
+      $('#rsNo', sheet).onclick = closeSheet;
+    });
+  }
+
   function defaultState() {
     return {
       v: 3,
       profile: Object.assign({}, PROFILE_DEFAULT, { startWeight: 80 }),
       checkins: {}, sessions: [], weekly: {}, unlocked: {},
-      settings: { voice: true, persona: 'female', music: true, musicVol: 0.07 }
+      settings: { voice: true, persona: 'female', music: true, musicVol: 0.18 }
     };
   }
   let state = load();
@@ -22,6 +130,8 @@
   let wake = null;
   let meta = null;
   let inited = false;
+  let pendingReload = false;
+  let photos = {};   // 蜕变照片：存 IndexedDB，不进 localStorage
 
   function migrateOld(d) {
     try {
@@ -52,18 +162,38 @@
   function load() {
     try {
       const raw = localStorage.getItem(LS);
-      if (!raw) return migrateOld(defaultState());
+      if (!raw) {
+        try {
+          const b = JSON.parse(localStorage.getItem(LS + '_backup') || 'null');
+          if (b && b.raw) { const restored = JSON.parse(b.raw); restored.__restored = true; return restored; }
+        } catch (e) {}
+        return migrateOld(defaultState());
+      }
       const s = JSON.parse(raw);
       const d = defaultState();
+      const mergedSettings = Object.assign(d.settings, s.settings || {});
+      if (typeof mergedSettings.musicVol !== 'number' || isNaN(mergedSettings.musicVol)) mergedSettings.musicVol = 0.18;
+      mergedSettings.musicVol = Math.max(0, Math.min(0.4, mergedSettings.musicVol));
       return Object.assign(d, s, {
         profile: Object.assign(d.profile, s.profile || {}),
-        settings: Object.assign(d.settings, s.settings || {}),
+        settings: mergedSettings,
         checkins: s.checkins || {}, sessions: s.sessions || [],
         weekly: s.weekly || {}, unlocked: s.unlocked || {}
       });
     } catch (e) { return defaultState(); }
   }
-  function save() { try { localStorage.setItem(LS, JSON.stringify(state)); } catch (e) {} }
+  let saveWarned = false;
+  function save(opts) {
+    try {
+      const raw = JSON.stringify(state);
+      localStorage.setItem(LS, raw);
+      localStorage.setItem(LS + '_backup', JSON.stringify({ ts: Date.now(), raw }));
+    } catch (e) {
+      console.error('save failed', e);
+      if (!saveWarned) { saveWarned = true; toast('存储空间不足，先导出备份'); }
+    }
+    if (!(opts && opts.silent)) scheduleStatePush();
+  }
   const check = (date) => {
     const d = date || today;
     if (!state.checkins[d]) state.checkins[d] = { done: {}, food: [] };
@@ -82,22 +212,29 @@
 
   function init() {
     if (inited) return; inited = true;
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
     TTS.supported && TTS.init();
     TTS.enabled = state.settings.voice;
-    if (typeof Voice !== 'undefined') Voice.init(state.settings.persona || 'female').then(() => renderMe());
+    if (typeof Voice !== 'undefined') Voice.init(state.settings.persona || 'female').then(() => renderMe()).catch(() => {});
+    loadPhotos();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
       const hadCtrl = !!navigator.serviceWorker.controller;
       let reloaded = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (hadCtrl && !reloaded) { reloaded = true; setTimeout(() => location.reload(), 300); }
+        if (!hadCtrl || reloaded) return;
+        reloaded = true;
+        if ($('#player') && $('#player').classList.contains('on')) { pendingReload = true; return; }
+        setTimeout(() => location.reload(), 300);
       });
     }
     bindNav(); bindPlayer();
+    try { if (typeof Music !== 'undefined') Music.setVolume(state.settings.musicVol || 0.18); } catch (e) {}
     renderAll();
-    initCouple();
+    const bf = $('#bootFallback'); if (bf) bf.style.display = 'none';
     checkVersion();
     handleStartParam();
+    setTimeout(maybeRestore, 1200);
     setInterval(() => { const t = R.today(); if (t !== today) { today = t; renderAll(); } }, 30000);
   }
 
@@ -108,13 +245,37 @@
     if (!start) return;
     const go = () => {
       try {
-        if (start === 'train') { switchTab('tab-train'); setTimeout(startTraining, 500); }
+        if (start === 'train') { switchTab('tab-train'); setTimeout(startTraining, 300); }
         else if (start === 'morning') { startMorning(); }
         else if (start === 'sleep') { startSleep(); }
         else if (start === 'diet') { switchTab('tab-diet'); }
       } catch (e) {}
     };
-    setTimeout(go, 700);
+    // iOS 规定音频必须来自用户手势：深链/快捷指令进来先让用户点一下
+    const needsTap = (start === 'train' || start === 'sleep' || start === 'morning') &&
+      typeof navigator.userActivation !== 'undefined' && !navigator.userActivation.hasBeenActive;
+    if (!needsTap) { setTimeout(go, 700); return; }
+    const mask = document.createElement('div');
+    mask.style.cssText = 'position:fixed;inset:0;z-index:200;background:#080b12;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px;text-align:center';
+    mask.innerHTML = `<div style="font-size:22px;font-weight:800">到时间了</div>
+      <div style="color:#8b95b0;font-size:14px;line-height:1.7">点一下开始，声音才会出来（iPhone 的要求）。</div>
+      <button id="tapStart" style="margin-top:8px;padding:16px 34px;border-radius:16px;background:#f0b429;color:#1a1305;font-size:17px;font-weight:800">开始</button>`;
+    document.body.appendChild(mask);
+    $('#tapStart').onclick = () => { mask.remove(); go(); };
+  }
+
+  function checkOriginBanner() {
+    try {
+      const CANON = 'https://macbook-pro-7.tail57206e.ts.net';
+      const h = location.hostname;
+      if (h === 'macbook-pro-7.tail57206e.ts.net' || h === '127.0.0.1' || h === 'localhost') return;
+      const bar = document.createElement('div');
+      bar.className = 'originbar';
+      bar.innerHTML = `<span>当前不是主地址（${esc(h)}），这里的数据不跟主地址互通。</span>
+        <a href="${CANON}/">去主地址</a><button id="obClose" aria-label="关闭">✕</button>`;
+      document.body.prepend(bar);
+      const b = $('#obClose'); if (b) b.onclick = () => bar.remove();
+    } catch (e) {}
   }
 
   async function checkVersion(manual) {
@@ -130,9 +291,13 @@
     if (!cur) { state.build = v.build; save(); return; }   // 首次只记录
     if (v.build !== cur) {
       if (manual) toast('发现新版，正在更新…');
-      try { const regs = await navigator.serviceWorker.getRegistrations(); for (const reg of regs) await reg.unregister(); } catch (e) {}
-      try { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); } catch (e) {}
       state.build = v.build; save();
+      try { const regs = await navigator.serviceWorker.getRegistrations(); for (const reg of regs) await reg.unregister(); } catch (e) {}
+      // 只清外壳缓存，语音包（tb-audio-v1）保留
+      try { const keys = await caches.keys(); await Promise.all(keys.filter(k => k.startsWith('tb-offline-')).map(k => caches.delete(k))); } catch (e) {}
+      if ($('#player') && $('#player').classList.contains('on')) {
+        pendingReload = true; if (manual) toast('新版已就绪，练完自动更新'); return;
+      }
       setTimeout(() => location.replace(location.pathname + '?v=' + encodeURIComponent(v.build)), 200);
       return;
     }
@@ -146,11 +311,14 @@
   }
 
 
+  function safeRender(fn) {
+    try { fn(); } catch (e) { console.error('render failed:', fn.name, e); }
+  }
   function renderAll() {
     today = R.today();
     plan = todayPlan(state, today);
-    renderHero(); renderSixGrid(); renderStatus(); renderThree(); renderCouple(); renderTip();
-    renderTrain(); renderDiet(); renderBadge(); renderExtras(); renderMe();
+    [renderHero, renderSixGrid, renderStatus, renderThree, renderTip,
+     renderTrain, renderDiet, renderBadge, renderExtras, renderMe].forEach(safeRender);
   }
 
   /* ---------- 今天 ---------- */
@@ -238,18 +406,19 @@
 
   function renderThree() {
     const c = check();
-    const w = WORKOUTS[plan.wid];
     const eaten = foodTotal().kcal;
     const doneTrain = !!c.done.train;
     const doneSleep = !!c.done.sleep;
+    const stopped = plan.mode === 'stop';
+    const notes = (plan.notes || []).slice();
     $('#threeCard').innerHTML = `<div class="card">
       <h3><span>今天三件事</span><span class="more">做一件也算赢</span></h3>
       <div class="rows">
         <div class="row-item ${doneTrain ? 'done' : ''}">
           <div class="ico">◎</div>
           <div class="txt"><div class="t1">训练 · ${esc(plan.title)}</div>
-            <div class="t2">${plan.minutes} 分钟${plan.mode === 'light' ? ' · 减量版' : ''}</div></div>
-          ${doneTrain ? `<div class="tick on">✓</div>` : `<button class="go" id="btnStartTrain">开始</button>`}
+            <div class="t2">${stopped ? '今天先不练，先看医生' : plan.minutes + ' 分钟' + (plan.mode === 'light' ? ' · 减量版' : '')}</div></div>
+          ${doneTrain ? `<div class="tick on">✓</div>` : (stopped ? '' : `<button class="go" id="btnStartTrain">开始</button>`)}
         </div>
         <div class="row-item">
           <div class="ico">◍</div>
@@ -264,10 +433,11 @@
           ${doneSleep ? `<div class="tick on">✓</div>` : `<button class="go" id="btnSleep">开始</button>`}
         </div>
       </div>
+      ${notes.map(n => `<div class="note ${n.type || 'info'}"><span>i</span><div>${esc(n.t)}</div></div>`).join('')}
     </div>`;
-    $('#btnStartTrain').onclick = startTraining;
-    $('#btnGoDiet').onclick = () => switchTab('tab-diet');
-    $('#btnSleep').onclick = startSleep;
+    const bStart = $('#btnStartTrain'); if (bStart) bStart.onclick = startTraining;
+    const bDiet = $('#btnGoDiet'); if (bDiet) bDiet.onclick = () => switchTab('tab-diet');
+    const bSleep = $('#btnSleep'); if (bSleep) bSleep.onclick = startSleep;
   }
 
   function renderMorning() {
@@ -313,6 +483,7 @@
 
   /* ---------- 训练 ---------- */
   function startTraining() {
+    if (plan.mode === 'stop') { toast('今天先别练，身体信号需要先看医生'); return; }
     const w = WORKOUTS[plan.wid];
     meta = { type: 'train', wid: plan.wid };
     openPlayer(w.title, plan.wid, { mode: plan.mode, prog: plan.prog }, state.settings.music ? resolveSound(w.music) : null);
@@ -388,13 +559,24 @@
     TTS.stop(); Music.stop();
     $('#player').classList.remove('on');
     releaseWake(); meta = null;
+    if (pendingReload) { pendingReload = false; setTimeout(() => location.reload(), 400); }
   }
 
   async function requestWake() {
     try {
-      if ('wakeLock' in navigator) { wake = await navigator.wakeLock.request('screen'); $('#pNote').textContent = '屏幕保持常亮'; }
-      else $('#pNote').textContent = '请保持屏幕亮着';
-    } catch (e) { $('#pNote').textContent = '请保持屏幕亮着'; }
+      if (wake && !wake.released) return;
+      if ('wakeLock' in navigator) {
+        wake = await navigator.wakeLock.request('screen');
+        $('#pNote').textContent = '屏幕保持常亮';
+        wake.addEventListener && wake.addEventListener('release', () => {
+          wake = null;
+          // 被系统/低电量释放后，页面还在前台就再申请一次
+          if ($('#player').classList.contains('on') && document.visibilityState === 'visible') setTimeout(requestWake, 800);
+        });
+      } else {
+        $('#pNote').textContent = '请手动关掉自动锁屏';
+      }
+    } catch (e) { $('#pNote').textContent = '请手动关掉自动锁屏'; }
   }
   function releaseWake() { try { wake && wake.release(); } catch (e) {} wake = null; }
 
@@ -408,7 +590,16 @@
       else { Music.start('calm'); $('#pMusic').classList.add('on'); }
     };
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && $('#player').classList.contains('on')) requestWake();
+      const open = $('#player').classList.contains('on');
+      if (document.visibilityState === 'hidden') {
+        // 切后台=暂停，避免 iOS 节流导致计时错位；顺手把最新数据推到 Mac
+        if (open && player && !player.paused) player.togglePause();
+        pushState();
+        return;
+      }
+      if (!open) return;
+      requestWake();
+      try { if (Beep.ctx && Beep.ctx.state !== 'running') Beep.ctx.resume(); } catch (e) {}
     });
   }
 
@@ -617,7 +808,7 @@
       <h3><span>语音与音乐</span><span class="more" id="voiceName">—</span></h3>
       <div class="row-item" style="padding-top:4px">
         <div class="txt"><div class="t1">训练语音</div><div class="t2">只在训练时说话，其他时候不念</div></div>
-        <div class="switch ${state.settings.voice ? 'on' : ''}" id="swVoice"></div>
+        <div class="switch ${state.settings.voice ? 'on' : ''}" id="swVoice" role="switch" aria-checked="${state.settings.voice ? 'true' : 'false'}" tabindex="0"></div>
       </div>
       <div class="q"><div class="lab"><span>音色</span></div>
         <div class="chips" id="personaChips">
@@ -633,14 +824,28 @@
         </div></div>
       <div class="row-item">
         <div class="txt"><div class="t1">背景音乐</div><div class="t2">走路、拉伸时更明显</div></div>
-        <div class="switch ${state.settings.music ? 'on' : ''}" id="swMusic"></div>
+        <div class="switch ${state.settings.music ? 'on' : ''}" id="swMusic" role="switch" aria-checked="${state.settings.music ? 'true' : 'false'}" tabindex="0"></div>
       </div>
-      <div class="field"><label>音乐音量 <b id="volVal">${Math.round((state.settings.musicVol || 0.07) * 100)}</b>%</label>
-        <input type="range" id="inVol" min="0" max="20" step="1" value="${Math.round((state.settings.musicVol || 0.07) * 100)}"></div>
+      <div class="field"><label>音乐音量 <b id="volVal">${Math.round((state.settings.musicVol == null ? 0.18 : state.settings.musicVol) * 100)}</b>%</label>
+        <input type="range" id="inVol" min="0" max="40" step="1" value="${Math.round((state.settings.musicVol == null ? 0.18 : state.settings.musicVol) * 100)}"></div>
       <button class="btn ghost small" id="btnTestVoice">试听一句</button>
     </div>`;
 
+    const recCount = Object.keys(state.checkins || {}).length;
+    const lastTs = (() => { try { return JSON.parse(localStorage.getItem(LS + '_backup') || '{}').ts; } catch (e) { return null; } })();
     $('#dataCard').innerHTML = `<div class="card">
+      <h3><span>数据自检</span><span class="more">${recCount} 天记录</span></h3>
+      <div class="kv"><span>当前地址</span><span style="font-size:11px;word-break:break-all">${esc(location.host)}</span></div>
+      <div class="kv"><span>最后保存</span><span>${lastTs ? new Date(lastTs).toLocaleString('zh-CN') : '还没保存'}</span></div>
+      <div class="kv"><span>本地备份</span><span>${lastTs ? '有' : '无'}</span></div>
+      <div class="kv"><span>Mac 备份</span><span id="backupAt">—</span></div>
+      <div class="row2" style="margin-top:8px">
+        <button class="btn ghost" id="btnBackupNow">备份到 Mac</button>
+        <button class="btn ghost" id="btnRestore">从 Mac 恢复</button>
+      </div>
+      <div class="hint" style="margin-top:8px">数据会在 2 秒内自动备份到 Mac；换手机、清缓存、换地址后打开会自动恢复。也可以随时导出当外部备份。</div>
+    </div>
+    <div class="card">
       <h3><span>离线语音包</span><span class="more" id="offlineState">—</span></h3>
       <div class="hint" style="margin-bottom:8px">下载一次，之后没网也能跟着练。</div>
       <button class="btn ghost" id="btnOffline">下载 / 补齐离线包</button>
@@ -712,8 +917,20 @@
     $('#btnTestVoice').onclick = () => { TTS.unlock(); Beep.unlock(); TTS.stop(); speakSeq(['准备开始。跟着屏幕上的时间做，动作慢一点。']); };
     $('#btnOffline').onclick = downloadPack;
     $('#btnExport').onclick = exportData;
-    $('#fileImport').onchange = e => importData(e.target.files[0]);
-    $('#btnReset').onclick = () => { if (confirm('清空所有记录？')) { localStorage.removeItem(LS); state = defaultState(); renderAll(); toast('已清空'); } };
+    const bbk = $('#btnBackupNow'); if (bbk) bbk.onclick = async () => {
+      const ok = await pushState();
+      toast(ok ? '已备份到 Mac' : '备份失败，检查配对/网络');
+    };
+    const brs = $('#btnRestore'); if (brs) brs.onclick = openRestoreSheet;
+    updateBackupLabel();
+    $('#fileImport').onchange = e => { importData(e.target.files[0]); e.target.value = ''; };
+    $('#btnReset').onclick = () => {
+      if (!confirm('清空这台手机上的所有记录？清空前建议先导出备份。')) return;
+      try { localStorage.removeItem(LS); localStorage.removeItem(LS + '_backup'); localStorage.removeItem('tb_partner'); localStorage.removeItem('tb_coach_v2'); } catch (e) {}
+      clearPhotos();
+      state = defaultState();
+      save(); renderAll(); toast('已清空');
+    };
 
     const trainLink = location.origin + location.pathname + '?start=train';
     const lnk = $('#lnkTrain'); if (lnk) lnk.textContent = trainLink;
@@ -755,12 +972,13 @@
         have += (await Promise.all(part.map(k => cache.match(k)))).filter(Boolean).length;
       }
       el.textContent = `${have} / ${keys.length}`;
-      // 顺手清掉旧版本留下的语音（省空间）
+      // 顺手清掉旧版本留下的语音（省空间）；两套音色都保留
       try {
-        const valid = new Set(Object.values(map).map(rel => new URL(rel, location.href).href));
+        const allRel = Object.values(m.maps || {}).flatMap(mp => Object.values(mp || {}));
+        const valid = new Set(allRel.map(rel => new URL(rel, location.href).href));
         const all = await cache.keys();
         for (const req of all) {
-          if (req.url.endsWith('.mp3') && !valid.has(req.url)) await cache.delete(req);
+          if (/\.mp3($|\?)/.test(req.url) && !valid.has(req.url)) await cache.delete(req);
         }
       } catch (e) {}
     } catch (e) { el.textContent = '—'; }
@@ -800,17 +1018,35 @@
 
   function exportData() {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
+    const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
+    a.href = url;
     a.download = `蜕变数据-${today}.json`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
     toast('已导出');
   }
   function importData(file) {
     if (!file) return;
     const r = new FileReader();
     r.onload = () => {
-      try { state = Object.assign(defaultState(), JSON.parse(r.result)); save(); renderAll(); toast('导入成功'); }
-      catch (e) { toast('文件读不出来'); }
+      try {
+        const parsed = JSON.parse(r.result);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('bad file');
+        const next = defaultState();
+        next.profile = Object.assign({}, PROFILE_DEFAULT, parsed.profile || {});
+        next.settings = Object.assign({}, next.settings, parsed.settings || {});
+        next.checkins = parsed.checkins && typeof parsed.checkins === 'object' ? parsed.checkins : {};
+        next.sessions = Array.isArray(parsed.sessions) ? parsed.sessions : [];
+        next.ratings = parsed.ratings && typeof parsed.ratings === 'object' ? parsed.ratings : {};
+        next.challenge = parsed.challenge && typeof parsed.challenge === 'object' ? parsed.challenge : {};
+        next.customFoods = Array.isArray(parsed.customFoods) ? parsed.customFoods : [];
+        next.workoutLog = parsed.workoutLog && typeof parsed.workoutLog === 'object' ? parsed.workoutLog : {};
+        next.role = parsed.role || '';
+        next.myName = parsed.myName || '';
+        next.unlocked = parsed.unlocked && typeof parsed.unlocked === 'object' ? parsed.unlocked : {};
+        state = next;
+        save(); renderAll(); toast('导入成功');
+      } catch (e) { toast('文件读不出来'); }
     };
     r.readAsText(file);
   }
@@ -871,7 +1107,14 @@
     if (onOpen) onOpen(mask);
     document.body.style.overflow = 'hidden';
   }
-  function closeSheet() { if (sheetEl) { sheetEl.remove(); sheetEl = null; } document.body.style.overflow = ''; }
+  function closeSheet() {
+    if (sheetEl) {
+      const onClose = sheetEl.__onClose;
+      sheetEl.remove(); sheetEl = null;
+      if (typeof onClose === 'function') { try { onClose(); } catch (e) {} }
+    }
+    document.body.style.overflow = '';
+  }
 
   function confetti() {
     const cv = $('#confetti'); if (!cv) return;
@@ -908,7 +1151,7 @@
           <div class="c"><b>${doneN}<span>/6</span></b><em>今天六维</em></div></div>
         <div class="hinfo">
           <div class="days">${left}<em>天后过年</em></div>
-          <div class="line">今天：${esc(plan.title)} · ${plan.minutes} 分钟</div>
+          <div class="line">今天：${esc(plan.title)}${plan.mode === 'stop' ? '' : ' · ' + plan.minutes + ' 分钟'}</div>
           <div class="badges">
             ${badge(plan.level, plan.statusLabel)}
             ${st ? badge('', `连续 ${st} 天`) : ''}
@@ -925,7 +1168,7 @@
     $$('#hero .quickbar button').forEach(b => b.onclick = () => {
       const q = b.dataset.q;
       if (q === 'food') { switchTab('tab-diet'); setTimeout(() => openFoodSearch(guessMealKey()), 80); }
-      if (q === 'train') { switchTab('tab-train'); setTimeout(startTraining, 120); }
+      if (q === 'train') { switchTab('tab-train'); if (plan.mode !== 'stop') setTimeout(startTraining, 120); }
       if (q === 'water') { addWater(1); toast('+1 杯水'); renderHero(); renderDiet(); }
       if (q === 'note') openQuickNote();
     });
@@ -1106,10 +1349,10 @@
     const logRows = logs.length ? logs.map(x => `<div class="kv"><span>${esc(x.ex)}</span><span>${x.w ? x.w + 'kg ' : ''}${esc(x.r)}</span></div>`).join('') : '<div class="empty">练完一组，记一下重量和次数</div>';
 
     $('#trainCard').innerHTML = `<div class="card">
-      <h3><span>今天的训练</span><span class="more">${done ? '已完成' : '跟着时间走'}</span></h3>
+      <h3><span>今天的训练</span><span class="more">${done ? '已完成' : (plan.mode === 'stop' ? '今天先不练' : '跟着时间走')}</span></h3>
       <div class="tbig">${esc(plan.title)}${plan.mode === 'light' ? '（减量）' : ''}</div>
-      <div class="hint">约 ${plan.minutes} 分钟 · ${w.music === 'calm' ? '舒缓音乐' : '可开背景音乐'}</div>
-      <button class="btn" id="btnTrainStart" style="margin-top:12px">${done ? '再练一次' : '▶ 开始训练'}</button>
+      <div class="hint">${plan.mode === 'stop' ? esc(plan.why) : '约 ' + plan.minutes + ' 分钟 · ' + (w.music === 'calm' ? '舒缓音乐' : '可开背景音乐')}</div>
+      ${plan.mode === 'stop' ? '' : `<button class="btn" id="btnTrainStart" style="margin-top:12px">${done ? '再练一次' : '▶ 开始训练'}</button>`}
       <div class="trow">
         <button class="tbtn" id="btnRest">⏱ 组间计时</button>
         <button class="tbtn" id="btnLog">✎ 记录一组</button>
@@ -1117,11 +1360,12 @@
       <div class="hint" style="margin-top:8px">口令告诉你：第几组、做多久、休息多久。手机放旁边，屏幕自动常亮。</div>
     </div>
     <div class="card"><h3><span>今天练什么</span></h3>${moves.join('')}
-      <div class="hint" style="margin-top:10px">${esc(plan.why)}</div></div>
+      <div class="hint" style="margin-top:10px">${esc(plan.why)}</div>
+      ${(plan.notes || []).map(n => `<div class="note ${n.type || 'info'}"><span>i</span><div>${esc(n.t)}</div></div>`).join('')}</div>
     <div class="card"><h3><span>今天的记录</span></h3>${logRows}</div>
-    <div class="card"><h3><span>晨间八段锦</span><span class="more">约 6 分钟</span></h3><div class="hint">八式，每式约一分钟，跟着口令和呼吸做。早上做最好，晚上放松也行。</div><button class="btn ghost" id="btnMorning2" style="margin-top:10px">开始八段锦</button></div>
+    <div class="card"><h3><span>晨间八段锦</span><span class="more">约 ${plan.morning.minutes} 分钟</span></h3><div class="hint">八式，每式约一分钟，跟着口令和呼吸做。早上做最好，晚上放松也行。</div><button class="btn ghost" id="btnMorning2" style="margin-top:10px">开始八段锦</button></div>
     <div class="card"><h3><span>最近训练</span></h3>${hist}</div>`;
-    $('#btnTrainStart').onclick = startTraining;
+    const bt = $('#btnTrainStart'); if (bt) bt.onclick = startTraining;
     $('#btnRest').onclick = () => openTimer(90);
     $('#btnLog').onclick = openTrainLog;
     const bm = $('#btnMorning2'); if (bm) bm.onclick = startMorning;
@@ -1136,7 +1380,7 @@
       $('#tStart', sheet).onclick = () => { if (timer) { clearInterval(timer); timer = null; $('#tStart', sheet).textContent = '继续'; } else { timer = setInterval(tick, 1000); $('#tStart', sheet).textContent = '暂停'; } };
       $('#tReset', sheet).onclick = () => { clearInterval(timer); timer = null; left = sec; draw(); };
       $$('#tPreset button', sheet).forEach(b => b.onclick = () => { clearInterval(timer); timer = null; left = +b.dataset.s; draw(); });
-      sheet.addEventListener('remove', () => clearInterval(timer));
+      sheet.__onClose = () => clearInterval(timer);
     });
   }
   function pad2(n) { return String(n).padStart(2, '0'); }
@@ -1176,13 +1420,11 @@
     DIMS6.forEach((d, i) => { const a = (-90 + i * 60) * Math.PI / 180; svg += `<line x1="${cx}" y1="${cy}" x2="${cx + Rr * Math.cos(a)}" y2="${cy + Rr * Math.sin(a)}" stroke="rgba(255,255,255,.06)"/>`; });
     const poly = (r, fill, stroke, dash) => `<polygon points="${DIMS6.map((d, i) => { const a = (-90 + i * 60) * Math.PI / 180, rr = Rr * (r[d.key] || 5) / 10; return `${cx + rr * Math.cos(a)},${cy + rr * Math.sin(a)}`; }).join(' ')}" fill="${fill}" stroke="${stroke}" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`;
     if (prev) svg += poly(prev, 'none', 'rgba(139,149,181,.35)', '4 3');
-    const pc = state.partnerCache && state.partnerCache.snapshot && (state.partnerCache.snapshot.ratings || {})[weekKey()];
-    if (pc) svg += poly(pc, 'none', '#ff7a9c', '5 4');
     if (cur) svg += poly(cur, 'rgba(245,196,81,.16)', '#f5c451');
     DIMS6.forEach((d, i) => { const a = (-90 + i * 60) * Math.PI / 180; svg += `<text x="${cx + (Rr + 20) * Math.cos(a)}" y="${cy + (Rr + 20) * Math.sin(a) + 4}" text-anchor="middle" fill="${d.color}" font-size="10">${d.name}</text>`; });
 
     const slots = [['w0', '第 0 周'], ['w4', '第 4 周'], ['w8', '第 8 周'], ['w13', '第 13 周']];
-    const ph = state.photos || {};
+    const ph = photos;
     const have = slots.filter(([k]) => ph[k]);
     const compare = have.length >= 2
       ? `<div class="photoCmp"><img src="${ph[have[0][0]]}"><img class="after" id="afterImg" src="${ph[have[have.length - 1][0]]}"><input type="range" id="cmp" min="0" max="100" value="50"></div>`
@@ -1198,9 +1440,80 @@
       </div>
       <button class="btn" id="btnShare" style="margin-bottom:12px">生成蜕变成果卡</button>`;
     $('#btnRate').onclick = openRatings;
+    bindPhotoInput();
     $$('#extraCards .slots button').forEach(b => b.onclick = () => { window.__slot = b.dataset.slot; $('#photoInput').click(); });
     const cmp = $('#cmp'); if (cmp) cmp.oninput = e => $('#afterImg').style.clipPath = `inset(0 0 0 ${e.target.value}%)`;
     $('#btnShare').onclick = shareCard;
+  }
+
+  /* ---------- 照片：IndexedDB，别塞 localStorage ---------- */
+  function idb() {
+    return new Promise((ok, no) => {
+      const r = indexedDB.open('tb-photos', 1);
+      r.onupgradeneeded = () => { try { r.result.createObjectStore('p'); } catch (e) {} };
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => no(r.error);
+    });
+  }
+  async function idbPut(k, v) {
+    const db = await idb();
+    return new Promise((ok, no) => {
+      const tx = db.transaction('p', 'readwrite');
+      tx.objectStore('p').put(v, k);
+      tx.oncomplete = () => { db.close(); ok(); };
+      tx.onerror = () => { db.close(); no(tx.error); };
+    });
+  }
+  async function idbAll() {
+    const db = await idb();
+    return new Promise((ok, no) => {
+      const out = {}, tx = db.transaction('p', 'readonly'), rq = tx.objectStore('p').openCursor();
+      rq.onsuccess = e => {
+        const cur = e.target.result;
+        if (cur) { out[cur.key] = cur.value; cur.continue(); }
+        else { db.close(); ok(out); }
+      };
+      rq.onerror = () => { db.close(); no(rq.error); };
+    });
+  }
+  async function loadPhotos() {
+    try { photos = await idbAll(); renderExtras(); } catch (e) { console.warn('photos unavailable', e); }
+  }
+  async function clearPhotos() {
+    try { const db = await idb(); const tx = db.transaction('p', 'readwrite'); tx.objectStore('p').clear(); tx.oncomplete = () => db.close(); } catch (e) {}
+    photos = {};
+  }
+  function bindPhotoInput() {
+    const inp = $('#photoInput');
+    if (!inp || inp.__bound) return;
+    inp.__bound = true;
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0]; inp.value = '';
+      if (!f || !window.__slot) return;
+      try {
+        const data = await compressPhoto(f);
+        await idbPut(window.__slot, data);
+        photos[window.__slot] = data;
+        renderExtras(); toast('照片已存');
+      } catch (e) { console.warn(e); toast('照片存不下，换一张小点的'); }
+    };
+  }
+  function compressPhoto(file) {
+    return new Promise((ok, no) => {
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => {
+        try {
+          const max = 900, s = Math.min(1, max / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          ok(c.toDataURL('image/jpeg', 0.82));
+        } catch (e) { URL.revokeObjectURL(url); no(e); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); no(new Error('bad image')); };
+      img.src = url;
+    });
   }
   function openRatings() {
     const wk = weekKey(), cur = (state.ratings || {})[wk] || {};
@@ -1228,11 +1541,13 @@
 
   /* ---------- 快速记一笔 ---------- */
   function openQuickNote() {
-    openSheet('快速记一笔', `<div class="seg" id="qnSeg"><button data-v="weight" class="on">体重</button><button data-v="mood">情绪</button><button data-v="read">阅读</button></div><div id="qnBody" style="margin-top:14px"></div>`, sheet => {
+    openSheet('快速记一笔', `<div class="seg" id="qnSeg"><button data-v="weight" class="on">体重</button><button data-v="steps">步数</button><button data-v="sleep">几点睡</button><button data-v="mood">情绪</button><button data-v="read">阅读</button></div><div id="qnBody" style="margin-top:14px"></div>`, sheet => {
       const draw = v => {
         const c = check();
         const bodies = {
           weight: `<div class="field"><label>体重 kg</label><input type="number" step="0.1" id="qW" value="${c.weight || state.profile.weight || ''}"></div>`,
+          steps: `<div class="field"><label>今天走了多少步</label><input type="number" id="qS" inputmode="numeric" value="${c.steps || ''}" placeholder="8000"></div>`,
+          sleep: `<div class="field"><label>昨晚几点睡</label><input type="time" id="qT" value="${c.sleepAt || '23:00'}"></div>`,
           mood: `<div class="field"><label><span>情绪</span><span><b id="qMV">${c.mood || 7}</b>/10</span></label><input type="range" id="qM" min="1" max="10" value="${c.mood || 7}"></div>`,
           read: `<div class="field"><label>读了几页</label><input type="number" id="qR" placeholder="20"></div>`
         };
@@ -1241,6 +1556,8 @@
         $('#qSave', sheet).onclick = () => {
           const cc = check();
           if (v === 'weight') { const w2 = +$('#qW', sheet).value; if (w2) { cc.weight = w2; state.profile.weight = w2; } }
+          if (v === 'steps') { const n = +$('#qS', sheet).value || 0; if (n) cc.steps = n; }
+          if (v === 'sleep') { const t = $('#qT', sheet).value; if (t) { cc.sleepAt = t; if (!cc.wakeAt) { const [h, m] = t.split(':').map(Number); const wm = (h * 60 + m + 7 * 60 + 30) % 1440; cc.wakeAt = `${pad2(Math.floor(wm / 60))}:${pad2(wm % 60)}`; } } }
           if (v === 'mood') cc.mood = +$('#qM', sheet).value;
           if (v === 'read') { const n = +$('#qR', sheet).value || 0; if (n) cc.done.read = Date.now(); cc.pages = (cc.pages || 0) + n; }
           save(); closeSheet(); renderAll(); toast('已记下');
@@ -1305,132 +1622,6 @@
   }
 
 
-
-  /* ================= v2.3 双人六维 ================= */
-  const COUPLE_CHALLENGES = [
-    '一起量一次体重腰围，拍第一张合照',
-    '一起走 30 分钟，不聊工作',
-    '一起做一顿饭：两菜一汤',
-    '互相说一件感谢对方的事',
-    '一起算一次家庭账，不指责',
-    '一起 23:00 关灯睡觉',
-    '各读 20 分钟，然后交换一句',
-    '一起整理一个抽屉或角落',
-    '一起做一次力量训练，各按自己强度',
-    '一起逛一次菜市场',
-    '同角度拍一张全身照',
-    '一起断网 1 小时',
-    '一起列过年行李和礼物清单',
-    '一起复盘六维，各打一次分',
-    '一起大扫除，放一首歌',
-    '回家一起做一道菜给家人'
-  ];
-  const API = location.hostname.endsWith('github.io') ? 'https://macbook-pro-7.tail57206e.ts.net/api/couple' : '/api/couple';
-  function weekStart() { const d = new Date(today); return R.add(today, -((d.getDay() + 6) % 7)); }
-  function coupleChallenge() { return COUPLE_CHALLENGES[weekIndex() % COUPLE_CHALLENGES.length]; }
-  function partnerSnap() { return state.partnerCache && state.partnerCache.snapshot || null; }
-  function partnerDims() {
-    const snap = partnerSnap(); if (!snap) return null;
-    const c = (snap.checkins || {})[today] || {};
-    const done = c.done || {}, meals = c.meals || {};
-    return {
-      body: !!done.train,
-      diet: Object.values(meals).some(m => m.status) || (c.food || []).length > 0,
-      mind: !!done.sleep,
-      relation: !!done.relation,
-      order: !!done.order,
-      growth: !!done.read
-    };
-  }
-  function coupleStreak() {
-    const mine = state.checkins || {}, theirs = (partnerSnap() || {}).checkins || {};
-    const has = c => c && (c.sleepHours || c.weight || c.steps || Object.keys(c.done || {}).length || Object.keys(c.meals || {}).length);
-    let d = today, n = 0;
-    if (!(has(mine[d]) && has(theirs[d]))) d = R.add(today, -1);
-    while (has(mine[d]) && has(theirs[d])) { n++; d = R.add(d, -1); }
-    return n;
-  }
-  function ringMini(dims, color) {
-    const done = dims ? Object.values(dims).filter(Boolean).length : 0;
-    let seg = '';
-    DIMS6.forEach((dm, i) => {
-      const a1 = (-90 + i * 60 + 5) * Math.PI / 180, a2 = (-90 + i * 60 + 55) * Math.PI / 180, r = 34;
-      const p1 = [50 + r * Math.cos(a1), 50 + r * Math.sin(a1)], p2 = [50 + r * Math.cos(a2), 50 + r * Math.sin(a2)];
-      const on = dims && dims[dm.key];
-      seg += `<path d="M${p1[0]} ${p1[1]} A${r} ${r} 0 0 1 ${p2[0]} ${p2[1]}" fill="none" stroke="${on ? dm.color : 'rgba(255,255,255,.08)'}" stroke-width="7" stroke-linecap="round"/>`;
-    });
-    return `<div class="miniring"><svg viewBox="0 0 100 100">${seg}</svg><b>${done}<span>/6</span></b></div>`;
-  }
-  function renderCouple() {
-    const el = $('#coupleCard'); if (!el) return;
-    const p = state.partnerCache;
-    const pd = partnerDims(), md = dimState();
-    const key = weekStart(), myDone = !!(state.challenge || {})[key];
-    const theirDone = !!(p && p.snapshot && (p.snapshot.challenge || {})[key]);
-    const streakN = p ? coupleStreak() : 0;
-    el.innerHTML = `<div class="card couplecard">
-      <h3><span>我们</span><span class="more">${p ? '一起第 ' + streakN + ' 天' : '等 TA 加入'}</span></h3>
-      <div class="couplegrid">
-        <div class="cp"><div class="cpr">${ringMini(md)}</div><div class="cpn">${esc(state.myName || '我')}</div></div>
-        <div class="cp"><div class="cpr">${p ? ringMini(pd) : ringMini(null)}</div><div class="cpn">${p ? esc(p.name) : '爱人'}</div></div>
-      </div>
-      <div class="challenge">
-        <div class="ch-t">本周一起 · ${coupleChallenge()}</div>
-        <div class="ch-btns">
-          <button class="chbtn ${myDone ? 'on' : ''}" id="btnChMe">${myDone ? '✓ 我完成了' : '我完成'}</button>
-          <button class="chbtn ${theirDone ? 'on' : ''}" disabled>${theirDone ? '✓ TA 完成了' : (p ? 'TA 还没完成' : '等 TA 加入')}</button>
-        </div>
-      </div>
-      ${p ? '' : `<button class="btn ghost small" id="btnInvite" style="margin-top:10px;width:100%">邀请爱人一起（远程也能用）</button>`}
-      <div class="sixfoot" style="margin-top:10px"><span>各自记各自，不查岗、不比较</span><button id="btnRole">${state.role ? '切换身份' : '设置我是谁'}</button></div>
-      <div class="hint" style="margin-top:6px;display:none" id="syncHint"></div>
-    </div>`;
-    const sh = $('#syncHint'); if (sh && location.hostname.endsWith('github.io')) { sh.style.display = 'block'; sh.textContent = '双人同步需要这台 Mac 在线；Mac 不在时各自记录，等它回来会自动补。'; }
-    $('#btnChMe').onclick = () => { state.challenge = state.challenge || {}; if (state.challenge[key]) delete state.challenge[key]; else state.challenge[key] = Date.now(); save(); renderCouple(); syncCouple(); };
-    $('#btnRole').onclick = openRoleSheet;
-    const inv = $('#btnInvite'); if (inv) inv.onclick = openInvite;
-  }
-  function openRoleSheet() {
-    openSheet('你是谁', `<div class="hint" style="margin-bottom:10px">两台手机各选一个身份，数据会自动同步到这台 Mac（远程也能用）。选错了可以再改。</div>
-      <div class="field"><label>你的名字</label><input id="roleName" value="${esc(state.myName || '')}" placeholder="比如 小王"></div>
-      <div class="seg" id="roleSeg"><button data-r="me" class="${state.role !== 'partner' ? 'on' : ''}">我是我</button><button data-r="partner" class="${state.role === 'partner' ? 'on' : ''}">我是爱人</button></div>
-      <button class="btn" id="roleSave" style="margin-top:14px">保存</button>`, sheet => {
-      let role = state.role || 'me';
-      $$('#roleSeg button', sheet).forEach(b => b.onclick = () => { role = b.dataset.r; $$('#roleSeg button', sheet).forEach(x => x.classList.toggle('on', x === b)); });
-      $('#roleSave', sheet).onclick = () => { state.role = role; state.myName = $('#roleName', sheet).value.trim() || (role === 'me' ? '我' : '爱人'); save(); closeSheet(); renderCouple(); syncCouple(); toast('已设置'); };
-    });
-  }
-  function openInvite() {
-    const url = location.origin + '/';
-    openSheet('邀请爱人', `<div class="hint">把下面的地址发给 TA，手机 4G/5G 也能打开，不用同一个 Wi-Fi；打开后选「我是爱人」，再添加到主屏幕。</div>
-      <div class="url" style="margin:10px 0;word-break:break-all;font-weight:700">${esc(url)}</div>
-      <button class="btn ghost" id="cpCopy" style="margin-top:0">复制链接</button>
-      <div class="hint" style="margin-top:12px">这个地址是公网 HTTPS，不用装证书。只要这台 Mac 开着、联网，TA 在哪都能打开。</div>
-      <div class="hint" style="margin-top:10px">装好后：选「我是爱人」→ 填名字 → 保存。之后你们各自打卡，首页会看到彼此的六维。</div>`, sheet => {
-      $('#cpCopy', sheet).onclick = async () => { try { await navigator.clipboard.writeText(url); toast('已复制'); } catch (e) { toast(url); } };
-    });
-  }
-  function syncCouple() {
-    if (!state.role) return;
-    const snap = {
-      profile: state.profile,
-      checkins: Object.fromEntries(Object.entries(state.checkins || {}).filter(([d]) => R.days(d, today) <= 30)),
-      ratings: state.ratings || {},
-      challenge: state.challenge || {},
-      sessions: (state.sessions || []).slice(-50)
-    };
-    fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: state.role, name: state.myName || '', snapshot: snap }) })
-      .then(() => fetch(API)).then(r => r.json()).then(d => {
-        const other = state.role === 'me' ? d.partner : d.me;
-        if (other) { state.partnerCache = other; save(); renderCouple(); }
-      }).catch(() => {});
-  }
-  function initCouple() {
-    try { const pc = localStorage.getItem('tb_partner'); if (pc && !state.partnerCache) state.partnerCache = JSON.parse(pc); } catch (e) {}
-    renderCouple(); syncCouple();
-    setInterval(syncCouple, 60000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) syncCouple(); });
-  }
 
   document.addEventListener('DOMContentLoaded', init);
   if (document.readyState !== 'loading') init();

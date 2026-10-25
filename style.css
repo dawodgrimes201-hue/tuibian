@@ -6,7 +6,7 @@
   --line: #222e46;
   --tx: #e9eefb;
   --mut: #8b95b0;
-  --dim: #5b6684;
+  --dim: #7b87a8;
   --gold: #f0b429;
   --green: #4cc9a4;
   --blue: #6aa9ff;
@@ -15,6 +15,10 @@
   --r: 18px;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+.originbar { position: sticky; top: 0; z-index: 130; display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.4; color: #ffd9a0; background: rgba(240,180,41,.14); border-bottom: 1px solid rgba(240,180,41,.3); backdrop-filter: blur(10px); }
+.originbar span { flex: 1; min-width: 0; }
+.originbar a { color: #ffd980; font-weight: 700; white-space: nowrap; }
+.originbar button { color: #ffd9a0; font-size: 14px; padding: 4px 6px; }
 html, body { margin: 0; background: var(--bg); color: var(--tx); }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif;
@@ -156,6 +160,7 @@ input[type="range"] { width: 100%; accent-color: var(--gold); }
 .p-progress { height: 5px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; margin: 20px 0 8px; }
 .p-progress > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--green), var(--blue)); transition: width .2s; }
 .p-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.p-safety { font-size: 11.5px; line-height: 1.5; color: #f6d487; background: rgba(240,180,41,.08); border: 1px solid rgba(240,180,41,.22); border-radius: 10px; padding: 7px 10px; margin-bottom: 10px; }
 .p-mini { padding: 8px 14px; border-radius: 11px; font-size: 13px; background: var(--card2); border: 1px solid var(--line); color: var(--tx); }
 .p-mini.on { border-color: rgba(240,180,41,.55); color: #ffd980; }
 .p-note { font-size: 11.5px; color: var(--dim); }
@@ -291,3 +296,9 @@ input[type="range"] { width: 100%; accent-color: var(--gold); }
 .chbtn{flex:1;border:1px solid var(--line);background:rgba(255,255,255,.04);border-radius:10px;padding:9px;font-size:12.5px;color:#c9d2ea}
 .chbtn.on{border-color:rgba(76,201,164,.45);background:rgba(76,201,164,.12);color:var(--green)}
 .chbtn:disabled{opacity:.75}
+
+/* 双人联动 */
+.couple-actions{display:flex;gap:8px;margin-top:12px}
+.cbtn{flex:1;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:12px;
+  padding:10px 8px;font-size:12.5px;color:#dbe3f5;text-align:center}
+.cbtn:active{background:rgba(255,255,255,.1)}

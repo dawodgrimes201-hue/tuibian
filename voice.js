@@ -46,7 +46,7 @@ const Voice = {
     if (!rel) return Promise.resolve(null);
     if (this.buffers[text]) return Promise.resolve(this.buffers[text]);
     if (this.pending[text]) return this.pending[text];
-    this.pending[text] = (async () => {
+    const p = (async () => {
       try {
         const ctx = this.ctx();
         if (!ctx) return null;
@@ -57,13 +57,15 @@ const Voice = {
           try { ctx.decodeAudioData(ab, ok, no); } catch (e) { no(e); }
         });
         this.buffers[text] = buf;
+        delete this.failed[text];
         return buf;
       } catch (e) {
         this.failed[text] = 1;
         return null;
       }
-    })();
-    return this.pending[text];
+    })().finally(() => { delete this.pending[text]; });   // 失败也允许下次重试
+    this.pending[text] = p;
+    return p;
   },
 
   async play(text) {

@@ -125,6 +125,17 @@ const WORKOUTS = {
   }
 };
 
+/* 红牌日用的最小流程：不练力量，只站一站、呼吸 */
+WORKOUTS.rest = {
+  title: '休息 + 呼吸', short: '休息', minutes: 4, music: 'rain',
+  intro: '今天先不练。站着、靠着墙，把呼吸放长，其他的交给医生。',
+  blocks: [
+    { k: 'warmup', name: '靠墙站', secs: 60, ex: 'wallstand' },
+    { k: 'cool', ex: 'birddog', secs: 45 },
+    { k: 'cool', ex: 'wallstand', secs: 60 }
+  ]
+};
+
 /* 晨间八段锦（按时间，每式约 1 分钟） */
 WORKOUTS.baduanjin = {
   title: '八段锦', short: '晨间', minutes: 12, music: 'rain', morning: true,
@@ -224,7 +235,7 @@ const BADGES = [
   { id: 'steps5', name: '每天八千步', icon: '👟', desc: '步数达标 5 天', goal: 5 },
   { id: 'family10', name: '常联系', icon: '📞', desc: '主动联系家人/朋友 10 次', goal: 10 },
   { id: 'read7', name: '读七天', icon: '📖', desc: '读 20 页 7 天', goal: 7 },
-  { id: 'review4', name: '会复盘', icon: '🧭', desc: '完成 4 次周复盘', goal: 4 },
+  { id: 'review4', name: '会复盘', icon: '🧭', desc: '完成 4 次六维自评', goal: 4 },
   { id: 'lose1', name: '减一公斤', icon: '⚖️', desc: '体重比基线少 1 kg', goal: 1 },
   { id: 'lose3', name: '减三公斤', icon: '🏆', desc: '体重比基线少 3 kg', goal: 3 },
   { id: 'nobelly', name: '肚子安静', icon: '🍵', desc: '连续 7 天没有肚子疼', goal: 7 }
@@ -241,4 +252,4 @@ const TIPS = [
   { t: '不舒服超过两周，别自己扛，去门诊。' }
 ];
 
-const SIGNALS = ['无', '肚子疼', '肚子胀', '腰酸', '头疼', '乏力', '没睡好'];
+const SIGNALS = ['无', '肚子疼', '肚子胀', '腰酸', '腿麻/放射痛', '头疼', '乏力', '没睡好', '昨晚喝酒'];

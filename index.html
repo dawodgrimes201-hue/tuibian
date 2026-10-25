@@ -2,13 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<meta name="theme-color" content="#0a0e16">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#080b12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="蜕变">
-<meta name="description" content="蜕变：下班之后的时间，练身体、吃对、睡好，拿勋章。">
+<meta name="description" content="蜕变：六维打卡、语音带练、数据自动备份。身体、心力、事业、关系、秩序、见识。">
 <title>蜕变</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -27,11 +27,8 @@
   <section id="tab-today" class="tab on">
     <div class="hero" id="hero"></div>
     <div id="sixGrid"></div>
-    <div id="coupleCard"></div>
     <div id="statusCard"></div>
     <div id="threeCard"></div>
-    <div id="morningCard"></div>
-    <div id="sideCard"></div>
     <div id="tipCard"></div>
   </section>
 
@@ -82,6 +79,7 @@
     <div class="p-sub" id="pSub"></div>
   </div>
   <div class="p-progress"><i id="pBar"></i></div>
+  <div class="p-safety">胸痛、头晕、喘不上气、腿麻、腹痛加重 → 立刻停；持续不缓解打 120</div>
   <div class="p-row">
     <button class="p-mini" id="pMusic">♪ 音乐</button>
     <div class="p-note" id="pNote">屏幕自动常亮</div>
@@ -92,6 +90,18 @@
   </div>
 </div>
 
+<div id="bootFallback" style="display:none;margin:16px;padding:16px;border-radius:16px;background:#3a2318;border:1px solid #7a4a1f;color:#ffd9a0;font-size:14px;line-height:1.7">
+  <b>App 没加载出来</b><br>
+  1. 换家里的固定地址：<a href="https://MacBook-Pro-3.local:8443/" style="color:#ffd980;font-weight:700">https://MacBook-Pro-3.local:8443</a><br>
+  2. 还不行：在 Mac 上运行「启动服务.command」<br>
+  3. 数据不会丢，Mac 主库有备份。
+</div>
+<script>
+setTimeout(function () {
+  var ok = document.querySelector('#hero .hero2') || document.querySelector('#threeCard .card');
+  if (!ok) { var f = document.getElementById('bootFallback'); if (f) f.style.display = 'block'; }
+}, 5000);
+</script>
 <div class="toast" id="toast"></div>
 <canvas id="confetti"></canvas>
 <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">

@@ -31,11 +31,20 @@ function sessionsIn(state, date, n = 7) {
   const set = new Set(R.range(date, n));
   return (state.sessions || []).filter(s => set.has(s.date));
 }
+function hasCheckinData(c) {
+  if (!c || typeof c !== 'object') return false;
+  if (typeof c.sleepHours === 'number' || typeof c.weight === 'number' || (c.steps || 0) > 0) return true;
+  if ((c.signals || []).length) return true;
+  if ((c.food || []).length) return true;
+  if (Object.keys(c.done || {}).length) return true;
+  if (Object.values(c.meals || {}).some(m => m && m.status)) return true;
+  return !!c.saved;
+}
 function checkinStreak(state, date) {
   let n = 0, d = date;
   for (let i = 0; i < 200; i++) {
     const c = getCheckin(state, d);
-    if (!c || !Object.keys(c).length) break;
+    if (!hasCheckinData(c)) break;
     n++; d = R.add(d, -1);
   }
   return n;
@@ -81,8 +90,18 @@ function todayPlan(state, date) {
   const cal = calorieTarget(state);
 
   const has = s => signals.includes(s);
+  const bellyDays = R.range(date, 14).map(d => getCheckin(state, d))
+    .filter(x => (x.signals || []).includes('肚子疼')).length;
 
-  if (has('腰酸')) {
+  if (has('腿麻/放射痛')) {
+    wid = 'rest'; mode = 'stop';
+    why = '腿麻、放射痛或腿没力气，今天先别练，尽快去骨科/康复科看一次。';
+    notes.push({ type: 'danger', t: '大小便控制不住、会阴发麻、腿突然没力 → 直接急诊。别练，先看医生。' });
+  } else if (has('昨晚喝酒')) {
+    wid = 'walk2'; mode = 'light';
+    why = '昨晚喝了酒，今天不练力量，只慢走或休息。';
+    notes.push({ type: 'warn', t: '酒后 24 小时内别做力量和大强度；多喝水，今晚早点睡。' });
+  } else if (has('腰酸')) {
     wid = 'stretch'; mode = 'light';
     why = '腰酸，今天不练力量，换成拉伸和腰背。';
     notes.push({ type: 'warn', t: '腰酸时别做仰卧起坐、负重转腰；每坐 45 分钟起来 1 分钟。' });
@@ -90,10 +109,18 @@ function todayPlan(state, date) {
     wid = 'walk2'; mode = 'light';
     why = '肚子不舒服，今天改快走，别做腹压大的动作。';
     notes.push({ type: 'warn', t: '肚子疼时吃热的、别空腹喝咖啡；如果连着几天都疼，去消化内科看看。' });
+  } else if (has('肚子胀')) {
+    wid = 'walk2'; mode = 'light';
+    why = '肚子胀，今天饭后慢走，不做卷腹和跳跃。';
+    notes.push({ type: 'warn', t: '胀的时候少量多餐、少喝碳酸饮料，饭后走 10 分钟再坐下。' });
+  } else if (has('头疼')) {
+    wid = 'stretch'; mode = 'light';
+    why = '头疼，今天不练力量，做拉伸和呼吸。';
+    notes.push({ type: 'warn', t: '头疼时别憋气用力、别长时间低头；持续加重或伴随视物不清、说话不利索，去医院。' });
   } else if (has('乏力') || energy <= 2) {
     mode = 'light';
     why = '今天精力低，每个动作少一组，休息加长。';
-  } else if (sh !== null && sh < 6.3) {
+  } else if (has('没睡好') || (sh !== null && sh < 6.3)) {
     mode = 'light';
     why = '昨晚睡得少，今天减量。';
   } else if (timeMin <= 20) {
@@ -101,6 +128,13 @@ function todayPlan(state, date) {
     why = '今晚时间不多，练个缩减版也算完成。';
   } else {
     why = '状态不错，按今天的计划练。';
+  }
+
+  if (bellyDays >= 5) {
+    notes.push({ type: 'danger', t: `近两周 ${bellyDays} 天肚子疼，建议挂消化内科，带上腹痛日记。` });
+  }
+  if (has('腰酸') && !has('腿麻/放射痛')) {
+    notes.push({ type: 'info', t: '如果腰疼开始往腿上放射、腿麻或没力气，今天就别练了，改成看医生。' });
   }
 
   const w = WORKOUTS[wid];
@@ -131,8 +165,8 @@ function todayPlan(state, date) {
     date, wid, title: w.title, minutes, mode, prog, weekNo, morning, why, notes,
     dietNotes: [...new Set(dietNotes)],
     nutrition: { target: cal.target, protein: cal.protein, bmi: cal.bmi, meals },
-    level: mode === 'light' ? 'yellow' : 'green',
-    statusLabel: mode === 'light' ? '减量日' : '正常日'
+    level: mode === 'stop' ? 'red' : mode === 'light' ? 'yellow' : 'green',
+    statusLabel: mode === 'stop' ? '今天先停' : mode === 'light' ? '减量日' : '正常日'
   };
 }
 
@@ -146,7 +180,7 @@ function badgeStats(state, date) {
   const stepsDays = (state.checkins ? Object.entries(state.checkins) : []).filter(([d, c]) => (c.steps || 0) >= 8000).length;
   const relation = (state.checkins ? Object.values(state.checkins) : []).filter(c => c.done && c.done.relation).length;
   const read = (state.checkins ? Object.values(state.checkins) : []).filter(c => c.done && c.done.read).length;
-  const reviews = Object.keys(state.weekly || {}).length;
+  const reviews = Object.keys(state.ratings || {}).length;   // 每周六维自评 = 一次复盘
   const baseW = (state.profile && state.profile.startWeight) || (state.profile && state.profile.weight) || 80;
   const latestW = (() => {
     for (let i = 0; i < 90; i++) {
@@ -160,7 +194,7 @@ function badgeStats(state, date) {
   for (let i = 0; i < 60; i++) {
     const c = getCheckin(state, R.add(date, -i));
     if ((c.signals || []).includes('肚子疼')) break;
-    if (Object.keys(c).length) noBelly++;
+    if (hasCheckinData(c)) noBelly++;
   }
   return {
     sessions, allSessions, streak, early, stepsDays, relation, read, reviews, lose, noBelly
@@ -185,7 +219,7 @@ function badgeList(state, date) {
 /* ---------- 提示 ---------- */
 function insights(state, date) {
   const out = [];
-  const checks = recent(state, date, 14).filter(x => Object.keys(x.c).length);
+  const checks = recent(state, date, 14).filter(x => hasCheckinData(x.c));
   const bellyDays = checks.filter(x => (x.c.signals || []).includes('肚子疼')).length;
   const sleepAvg = avg(checks.map(x => sleepHours(x.c)));
   const sess = sessionsIn(state, date, 7).length;

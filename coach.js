@@ -225,18 +225,19 @@ const Music = {
     this.playing = false;
     this.timers.forEach(t => clearInterval(t));
     this.timers = [];
+    // 先摘出旧 master/nodes，延时清理只碰旧对象；否则会误杀下一次 start() 的新 master
+    const oldMaster = this.master, oldNodes = this.nodes.slice();
+    this.master = null; this.nodes = [];
     try {
-      if (this.master && Beep.ctx) {
-        this.master.gain.cancelScheduledValues(Beep.ctx.currentTime);
-        this.master.gain.linearRampToValueAtTime(0.0001, Beep.ctx.currentTime + 1.2);
+      if (oldMaster && Beep.ctx) {
+        oldMaster.gain.cancelScheduledValues(Beep.ctx.currentTime);
+        oldMaster.gain.linearRampToValueAtTime(0.0001, Beep.ctx.currentTime + 1.2);
       }
     } catch (e) {}
-    const nodes = this.nodes.slice();
-    this.nodes = [];
-    setTimeout(() => {
-      nodes.forEach(n => { try { n.stop && n.stop(); } catch (e) {} });
-      try { this.master && this.master.disconnect(); } catch (e) {}
-      this.master = null;
+    clearTimeout(this._stopTimer);
+    this._stopTimer = setTimeout(() => {
+      oldNodes.forEach(n => { try { n.stop && n.stop(); } catch (e) {} });
+      try { oldMaster && oldMaster.disconnect(); } catch (e) {}
     }, 1400);
   },
 
@@ -286,7 +287,9 @@ function buildTimeline(wid, variant) {
     }
     if (b.k === 'walk') {
       say(`${b.name}。`);
-      out.push({ k: 'work', secs: b.secs, label: b.name, cues: (b.cues || []) });
+      // 走路日也要吃「减量/20 分钟」：时长减半，cue 超出新时长的丢掉
+      const wsecs = light ? Math.max(300, Math.round(b.secs * 0.5)) : b.secs;
+      out.push({ k: 'work', secs: wsecs, label: b.name + (light ? '（减量）' : ''), cues: (b.cues || []).filter(c => c.at < wsecs) });
       return;
     }
     if (b.k === 'ex') {
@@ -427,7 +430,10 @@ class CoachPlayer {
     } catch (e) {
       this.running = false;
       Music.stop();
-      if (!this.cancelled) this.onDone();
+      if (this.cancelled) return;
+      // 不要把异常当成「练完了」记一次训练；留在播放器里让用户自己决定
+      console.warn('player stopped by error', e);
+      this.emit({ label: '出错了，先停下', sub: '点「结束」退出，再重新开始一次', pct: 0 });
     }
   }
 
@@ -439,12 +445,15 @@ class CoachPlayer {
     }
     if (b.k === 'work' || b.k === 'rest') {
       const total = b.secs;
-      let elapsed = 0;
       const cues = (b.cues || []).slice().sort((a, b2) => a.at - b2.at);
-      const tick = 100;
-      while (elapsed < total * 1000) {
+      const t0 = performance.now();
+      let pausedMs = 0, pauseAt = 0, lastTickSec = -1, saidTen = false;
+      while (true) {
         if (this.cancelled) throw new Error('cancel');
-        while (this.paused) { await sleep(100); if (this.cancelled) throw new Error('cancel'); }
+        if (this.paused) { if (!pauseAt) pauseAt = performance.now(); await sleep(100); continue; }
+        if (pauseAt) { pausedMs += performance.now() - pauseAt; pauseAt = 0; }
+        const elapsed = performance.now() - t0 - pausedMs;   // 墙钟，后台节流也不会错位
+        if (elapsed >= total * 1000) break;
         const remain = Math.ceil((total * 1000 - elapsed) / 1000);
         this.emit({
           label: b.label,
@@ -453,10 +462,9 @@ class CoachPlayer {
           remain
         });
         while (cues.length && elapsed >= cues[0].at * 1000) TTS.say(cues.shift().t);
-        if (b.k === 'work' && remain <= 3 && remain > 0 && elapsed % 1000 < tick) Beep.tick();
-        if (b.k === 'rest' && remain === 10) TTS.say('还有十秒。');
-        await this.wait(tick);
-        elapsed += tick;
+        if (b.k === 'work' && remain <= 3 && remain > 0 && remain !== lastTickSec) { lastTickSec = remain; Beep.tick(); }
+        if (b.k === 'rest' && remain === 10 && !saidTen) { saidTen = true; TTS.say('还有十秒。'); }
+        await sleep(100);
       }
       if (b.k === 'work') Beep.go();
       return;
