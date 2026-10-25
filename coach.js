@@ -337,6 +337,19 @@ function buildTimeline(wid, variant) {
     }
   });
 
+  const targetMin = Number(v.targetMin) > 0 ? Number(v.targetMin) : 0;
+  if (targetMin) {
+    const est = () => {
+      let secs = 0, says = 0;
+      out.forEach(b => { if (b.k === 'say') says++; else if (b.k === 'work' || b.k === 'rest') secs += b.secs || 0; });
+      return (secs + says * 2.4) / 60;
+    };
+    if (est() < targetMin - 0.5) {
+      const need = Math.max(60, Math.ceil((targetMin - est()) * 60));
+      out.push({ k: 'work', secs: need, label: '加练 · 快走', cues: [] });
+    }
+  }
+
   say('练完了。今天这条线没有断。去喝口水。');
   out.push({ k: 'done' });
   return out;
