@@ -6,7 +6,7 @@
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  /* 数据层：本机 Mac 用 /api/state；CloudBase 静态托管用云函数 state（免 Mac） */
+  /* 数据层：本机 本机用 /api/state；CloudBase 静态托管用云函数 state（免 本机） */
   const STATE_API = '/api/state';
   const ROLE = 'me';
   const IS_CLOUD = true;   // GitHub Pages 构建：数据走 CloudBase HTTP API
@@ -60,7 +60,7 @@
         return { ok: true, state: res.state || null, updated: res.updated || null };
       }
       const r = await fetch(STATE_API + '?role=' + ROLE, { cache: 'no-store' });
-      if (!r.ok) { if (!quiet) toast('连不上 Mac 上的备份'); return null; }
+      if (!r.ok) { if (!quiet) toast('连不上云端备份'); return null; }
       const d = await r.json();
       return d && d.ok ? d : null;
     } catch (e) { if (!quiet) toast('连不上备份'); return null; }
@@ -75,7 +75,7 @@
     next.build = state.build;
     state = next;
     save(); renderAll();
-    toast('已从 Mac 恢复');
+    toast('已从云恢复');
   }
   function updateBackupLabel() {
     const el = $('#backupAt'); if (!el) return;
@@ -91,8 +91,8 @@
     const serverDays = Object.keys(s.checkins || {}).length;
     if (!localDays && serverDays) { applyRestore(d); return; }
     if ((d.updated || 0) > (state.updatedAt || 0) + 60000 && serverDays >= localDays && serverDays > 0) {
-      openSheet('Mac 上有更新的备份', `<div class="hint">Mac 上有一份 ${serverDays} 天记录的备份，更新于 ${new Date((d.updated || 0)).toLocaleString('zh-CN')}；这台手机本地是 ${localDays} 天。</div>
-        <button class="btn" id="rsYes" style="margin-top:12px">用 Mac 上的覆盖本机</button>
+      openSheet('云端有更新的备份', `<div class="hint">云端有一份 ${serverDays} 天记录的备份，更新于 ${new Date((d.updated || 0)).toLocaleString('zh-CN')}；这台手机本地是 ${localDays} 天。</div>
+        <button class="btn" id="rsYes" style="margin-top:12px">用云端的覆盖本机</button>
         <button class="btn ghost" id="rsNo" style="margin-top:8px">保留本机</button>`, sheet => {
         $('#rsYes', sheet).onclick = () => { applyRestore(d); closeSheet(); };
         $('#rsNo', sheet).onclick = () => { closeSheet(); pushState(); };
@@ -104,9 +104,9 @@
   async function openRestoreSheet() {
     const d = await pullState(false);
     if (!d) return;
-    if (!d.state) { toast('Mac 上还没有备份'); return; }
+    if (!d.state) { toast('云端还没有备份'); return; }
     const days = Object.keys(d.state.checkins || {}).length;
-    openSheet('从 Mac 恢复', `<div class="hint">Mac 上：${days} 天记录，更新于 ${new Date(d.updated || 0).toLocaleString('zh-CN')}。<br>恢复会覆盖这台手机当前的数据。</div>
+    openSheet('从云恢复', `<div class="hint">云端：${days} 天记录，更新于 ${new Date(d.updated || 0).toLocaleString('zh-CN')}。<br>恢复会覆盖这台手机当前的数据。</div>
       <button class="btn" id="rsYes" style="margin-top:12px">覆盖本机</button>
       <button class="btn ghost" id="rsNo" style="margin-top:8px">取消</button>`, sheet => {
       $('#rsYes', sheet).onclick = () => { applyRestore(d); closeSheet(); };
@@ -838,12 +838,12 @@
       <div class="kv"><span>当前地址</span><span style="font-size:11px;word-break:break-all">${esc(location.host)}</span></div>
       <div class="kv"><span>最后保存</span><span>${lastTs ? new Date(lastTs).toLocaleString('zh-CN') : '还没保存'}</span></div>
       <div class="kv"><span>本地备份</span><span>${lastTs ? '有' : '无'}</span></div>
-      <div class="kv"><span>Mac 备份</span><span id="backupAt">—</span></div>
+      <div class="kv"><span>云端备份</span><span id="backupAt">—</span></div>
       <div class="row2" style="margin-top:8px">
-        <button class="btn ghost" id="btnBackupNow">备份到 Mac</button>
-        <button class="btn ghost" id="btnRestore">从 Mac 恢复</button>
+        <button class="btn ghost" id="btnBackupNow">备份到云</button>
+        <button class="btn ghost" id="btnRestore">从云恢复</button>
       </div>
-      <div class="hint" style="margin-top:8px">数据会在 2 秒内自动备份到 Mac；换手机、清缓存、换地址后打开会自动恢复。也可以随时导出当外部备份。</div>
+      <div class="hint" style="margin-top:8px">数据会在 2 秒内自动备份到云；换手机、清缓存、换地址后打开会自动恢复。也可以随时导出当外部备份。</div>
     </div>
     <div class="card">
       <h3><span>离线语音包</span><span class="more" id="offlineState">—</span></h3>
@@ -919,7 +919,7 @@
     $('#btnExport').onclick = exportData;
     const bbk = $('#btnBackupNow'); if (bbk) bbk.onclick = async () => {
       const ok = await pushState();
-      toast(ok ? '已备份到 Mac' : '备份失败，检查配对/网络');
+      toast(ok ? '已备份到云' : '备份失败，检查网络');
     };
     const brs = $('#btnRestore'); if (brs) brs.onclick = openRestoreSheet;
     updateBackupLabel();
