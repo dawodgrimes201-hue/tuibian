@@ -20,93 +20,39 @@
    ]
   },
   {
-   "id": "Dumbbell_Squat",
-   "n": "哑铃深蹲",
-   "en": "Dumbbell Squat",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
+   "id": "Bodyweight_Walking_Lunge",
+   "n": "徒手行走弓步",
+   "en": "Bodyweight Walking Lunge",
+   "eq": "body",
+   "eqLabel": "徒手",
    "group": "下肢/臀",
    "target": "股四头肌/臀",
    "steps": [
-    "双手持哑铃垂于体侧或肩前。",
-    "保持背直，屈髋屈膝下蹲。",
-    "脚掌蹬地站起，膝盖别内扣。"
-   ],
-   "img": [
-    "ex/Dumbbell_Squat/0.jpg",
-    "ex/Dumbbell_Squat/1.jpg"
-   ]
-  },
-  {
-   "id": "Goblet_Squat",
-   "n": "高脚杯深蹲",
-   "en": "Goblet Squat",
-   "eq": "kettlebell",
-   "eqLabel": "哑铃/壶铃",
-   "group": "下肢/臀",
-   "target": "股四头肌/臀",
-   "steps": [
-    "双手捧哑铃或壶铃在胸前。",
-    "下蹲，肘在膝盖内侧。",
-    "站起时收紧臀部。"
-   ],
-   "img": [
-    "ex/Goblet_Squat/0.jpg",
-    "ex/Goblet_Squat/1.jpg"
-   ]
-  },
-  {
-   "id": "Dumbbell_Lunges",
-   "n": "哑铃弓步",
-   "en": "Dumbbell Lunges",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
-   "group": "下肢/臀",
-   "target": "股四头肌/臀",
-   "steps": [
-    "双手持哑铃，一腿向前跨。",
+    "站直，一腿向前跨一大步。",
     "下蹲到前膝约 90 度，后膝接近地面。",
-    "前脚蹬地回到站姿，换边。"
+    "后脚蹬地向前换腿，像走路一样。"
    ],
    "img": [
-    "ex/Dumbbell_Lunges/0.jpg",
-    "ex/Dumbbell_Lunges/1.jpg"
+    "ex/Bodyweight_Walking_Lunge/0.jpg",
+    "ex/Bodyweight_Walking_Lunge/1.jpg"
    ]
   },
   {
-   "id": "Split_Squat_with_Dumbbells",
-   "n": "哑铃分腿蹲",
-   "en": "Split Squat with Dumbbells",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
+   "id": "Step-up_with_Knee_Raise",
+   "n": "台阶提膝",
+   "en": "Step-up with Knee Raise",
+   "eq": "body",
+   "eqLabel": "椅子/台阶",
    "group": "下肢/臀",
-   "target": "股四头肌/臀",
+   "target": "臀/腿",
    "steps": [
-    "前后脚分开，双手持哑铃。",
-    "身体垂直下蹲，前膝朝脚尖。",
-    "前脚发力站起，换边。"
+    "面对稳固的台阶或矮凳。",
+    "一脚踩上，脚跟发力站起。",
+    "站起时另一膝抬高，慢慢下，换边。"
    ],
    "img": [
-    "ex/Split_Squat_with_Dumbbells/0.jpg",
-    "ex/Split_Squat_with_Dumbbells/1.jpg"
-   ]
-  },
-  {
-   "id": "Stiff-Legged_Dumbbell_Deadlift",
-   "n": "哑铃直腿硬拉",
-   "en": "Stiff-Legged Dumbbell Deadlift",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
-   "group": "下肢/臀",
-   "target": "腘绳肌/臀",
-   "steps": [
-    "微屈膝，髋向后推，背保持直。",
-    "哑铃沿腿前侧下放，感到大腿后侧拉长。",
-    "臀发力站直，别弓腰。"
-   ],
-   "img": [
-    "ex/Stiff-Legged_Dumbbell_Deadlift/0.jpg",
-    "ex/Stiff-Legged_Dumbbell_Deadlift/1.jpg"
+    "ex/Step-up_with_Knee_Raise/0.jpg",
+    "ex/Step-up_with_Knee_Raise/1.jpg"
    ]
   },
   {
@@ -146,39 +92,39 @@
    ]
   },
   {
-   "id": "Dumbbell_Step_Ups",
-   "n": "哑铃台阶踏步",
-   "en": "Dumbbell Step Ups",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
+   "id": "Glute_Kickback",
+   "n": "跪姿后踢腿",
+   "en": "Glute Kickback",
+   "eq": "body",
+   "eqLabel": "徒手",
    "group": "下肢/臀",
-   "target": "股四头肌/臀",
+   "target": "臀",
    "steps": [
-    "双手持哑铃，面对稳固的台阶或矮凳。",
-    "一脚踩上，脚跟发力站起。",
-    "慢慢下台阶，换边。"
+    "四足跪姿，手在肩下。",
+    "一腿屈膝向后上方踢。",
+    "臀收紧，慢慢回，换边。"
    ],
    "img": [
-    "ex/Dumbbell_Step_Ups/0.jpg",
-    "ex/Dumbbell_Step_Ups/1.jpg"
+    "ex/Glute_Kickback/0.jpg",
+    "ex/Glute_Kickback/1.jpg"
    ]
   },
   {
-   "id": "Standing_Dumbbell_Calf_Raise",
-   "n": "哑铃提踵",
-   "en": "Standing Dumbbell Calf Raise",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
+   "id": "Side_Leg_Raises",
+   "n": "侧卧抬腿",
+   "en": "Side Leg Raises",
+   "eq": "body",
+   "eqLabel": "徒手",
    "group": "下肢/臀",
-   "target": "小腿",
+   "target": "臀/大腿外侧",
    "steps": [
-    "站直，双手持哑铃。",
-    "踮起脚尖到最高，停 1 秒。",
-    "慢慢落下，脚跟不砸地。"
+    "侧卧，下面的腿微屈。",
+    "上面的腿伸直向上抬。",
+    "慢慢落下，换边。"
    ],
    "img": [
-    "ex/Standing_Dumbbell_Calf_Raise/0.jpg",
-    "ex/Standing_Dumbbell_Calf_Raise/1.jpg"
+    "ex/Side_Leg_Raises/0.jpg",
+    "ex/Side_Leg_Raises/1.jpg"
    ]
   },
   {
@@ -236,201 +182,57 @@
    ]
   },
   {
-   "id": "Dumbbell_Bench_Press",
-   "n": "哑铃卧推",
-   "en": "Dumbbell Bench Press",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
+   "id": "Push_Up_to_Side_Plank",
+   "n": "俯卧撑接侧平板",
+   "en": "Push Up to Side Plank",
+   "eq": "body",
+   "eqLabel": "徒手",
    "group": "胸/肩",
-   "target": "胸/三头",
+   "target": "胸/核心",
    "steps": [
-    "仰卧屈膝，哑铃在胸两侧。",
-    "推起哑铃到手臂伸直。",
-    "慢慢下放到胸侧，控制住。"
+    "做一个俯卧撑。",
+    "撑起后转身成侧平板，手臂向上。",
+    "回到平板，换边。"
    ],
    "img": [
-    "ex/Dumbbell_Bench_Press/0.jpg",
-    "ex/Dumbbell_Bench_Press/1.jpg"
+    "ex/Push_Up_to_Side_Plank/0.jpg",
+    "ex/Push_Up_to_Side_Plank/1.jpg"
    ]
   },
   {
-   "id": "Dumbbell_Flyes",
-   "n": "哑铃飞鸟",
-   "en": "Dumbbell Flyes",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
+   "id": "Isometric_Chest_Squeezes",
+   "n": "胸前静力夹",
+   "en": "Isometric Chest Squeezes",
+   "eq": "body",
+   "eqLabel": "徒手",
    "group": "胸/肩",
    "target": "胸",
    "steps": [
-    "仰卧，哑铃在胸上方，肘微屈。",
-    "向两侧打开，感到胸拉伸。",
-    "胸发力合拢，别用甩的。"
+    "双手在胸前合十。",
+    "用力互推，胸肌收紧。",
+    "保持呼吸，别憋气。"
    ],
    "img": [
-    "ex/Dumbbell_Flyes/0.jpg",
-    "ex/Dumbbell_Flyes/1.jpg"
+    "ex/Isometric_Chest_Squeezes/0.jpg",
+    "ex/Isometric_Chest_Squeezes/1.jpg"
    ]
   },
   {
-   "id": "Seated_Dumbbell_Press",
-   "n": "坐姿哑铃推举",
-   "en": "Seated Dumbbell Press",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
+   "id": "Clock_Push-Up",
+   "n": "时钟俯卧撑",
+   "en": "Clock Push-Up",
+   "eq": "body",
+   "eqLabel": "徒手",
    "group": "胸/肩",
-   "target": "肩/三头",
+   "target": "胸/肩",
    "steps": [
-    "坐直，哑铃在肩两侧。",
-    "向上推起，手臂接近伸直。",
-    "慢慢下放到耳朵高度。"
+    "俯卧撑姿势，手在肩下。",
+    "身体像时钟一样向前后左右移动。",
+    "每方向做几次，保持核心收紧。"
    ],
    "img": [
-    "ex/Seated_Dumbbell_Press/0.jpg",
-    "ex/Seated_Dumbbell_Press/1.jpg"
-   ]
-  },
-  {
-   "id": "Side_Lateral_Raise",
-   "n": "哑铃侧平举",
-   "en": "Side Lateral Raise",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
-   "group": "胸/肩",
-   "target": "肩中束",
-   "steps": [
-    "站直，哑铃在体侧，肘微屈。",
-    "向两侧抬到肩高。",
-    "慢慢落下，别耸肩。"
-   ],
-   "img": [
-    "ex/Side_Lateral_Raise/0.jpg",
-    "ex/Side_Lateral_Raise/1.jpg"
-   ]
-  },
-  {
-   "id": "Front_Dumbbell_Raise",
-   "n": "哑铃前平举",
-   "en": "Front Dumbbell Raise",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
-   "group": "胸/肩",
-   "target": "肩前束",
-   "steps": [
-    "站直，哑铃在体前。",
-    "向前抬到肩高。",
-    "慢慢落下，身体别后仰。"
-   ],
-   "img": [
-    "ex/Front_Dumbbell_Raise/0.jpg",
-    "ex/Front_Dumbbell_Raise/1.jpg"
-   ]
-  },
-  {
-   "id": "Arnold_Dumbbell_Press",
-   "n": "阿诺德推举",
-   "en": "Arnold Dumbbell Press",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
-   "group": "胸/肩",
-   "target": "肩",
-   "steps": [
-    "坐姿，掌心朝自己，哑铃在胸前。",
-    "推起时旋转到掌心朝前。",
-    "慢慢回到起点。"
-   ],
-   "img": [
-    "ex/Arnold_Dumbbell_Press/0.jpg",
-    "ex/Arnold_Dumbbell_Press/1.jpg"
-   ]
-  },
-  {
-   "id": "Standing_Dumbbell_Triceps_Extension",
-   "n": "哑铃颈后臂屈伸",
-   "en": "Standing Dumbbell Triceps Extension",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
-   "group": "胸/肩",
-   "target": "三头",
-   "steps": [
-    "双手托住一只哑铃举过头顶。",
-    "屈肘把哑铃放到脑后。",
-    "三头发力伸肘，肘别外张。"
-   ],
-   "img": [
-    "ex/Standing_Dumbbell_Triceps_Extension/0.jpg",
-    "ex/Standing_Dumbbell_Triceps_Extension/1.jpg"
-   ]
-  },
-  {
-   "id": "Tricep_Dumbbell_Kickback",
-   "n": "哑铃臂屈伸",
-   "en": "Tricep Dumbbell Kickback",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
-   "group": "胸/肩",
-   "target": "三头",
-   "steps": [
-    "俯身，一手撑椅，另一手持哑铃。",
-    "肘固定在体侧，向后伸肘。",
-    "慢慢回，换边。"
-   ],
-   "img": [
-    "ex/Tricep_Dumbbell_Kickback/0.jpg",
-    "ex/Tricep_Dumbbell_Kickback/1.jpg"
-   ]
-  },
-  {
-   "id": "One-Arm_Dumbbell_Row",
-   "n": "单臂哑铃划船",
-   "en": "One-Arm Dumbbell Row",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
-   "group": "背",
-   "target": "背/二头",
-   "steps": [
-    "一手一膝撑椅，背保持平。",
-    "哑铃拉向髋部，肘贴身。",
-    "慢慢下放，换边。"
-   ],
-   "img": [
-    "ex/One-Arm_Dumbbell_Row/0.jpg",
-    "ex/One-Arm_Dumbbell_Row/1.jpg"
-   ]
-  },
-  {
-   "id": "Bent_Over_Two-Dumbbell_Row",
-   "n": "俯身哑铃划船",
-   "en": "Bent Over Two-Dumbbell Row",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
-   "group": "背",
-   "target": "背/二头",
-   "steps": [
-    "屈髋俯身，背直，双手持哑铃。",
-    "拉向腹部，肩胛收紧。",
-    "慢慢下放，别甩。"
-   ],
-   "img": [
-    "ex/Bent_Over_Two-Dumbbell_Row/0.jpg",
-    "ex/Bent_Over_Two-Dumbbell_Row/1.jpg"
-   ]
-  },
-  {
-   "id": "Dumbbell_Shrug",
-   "n": "哑铃耸肩",
-   "en": "Dumbbell Shrug",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
-   "group": "背",
-   "target": "斜方肌",
-   "steps": [
-    "站直，双手持哑铃。",
-    "肩膀向耳朵耸起，停 1 秒。",
-    "慢慢落下。"
-   ],
-   "img": [
-    "ex/Dumbbell_Shrug/0.jpg",
-    "ex/Dumbbell_Shrug/1.jpg"
+    "ex/Clock_Push-Up/0.jpg",
+    "ex/Clock_Push-Up/1.jpg"
    ]
   },
   {
@@ -452,57 +254,21 @@
    ]
   },
   {
-   "id": "Reverse_Flyes",
-   "n": "俯身飞鸟",
-   "en": "Reverse Flyes",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
+   "id": "Bodyweight_Mid_Row",
+   "n": "桌边反向划船",
+   "en": "Bodyweight Mid Row",
+   "eq": "body",
+   "eqLabel": "桌子",
    "group": "背",
-   "target": "后肩/上背",
+   "target": "背/二头",
    "steps": [
-    "屈髋俯身，哑铃在胸下，肘微屈。",
-    "向两侧打开到肩高。",
-    "慢慢合拢。"
+    "躺在稳固的桌子下方，手抓桌沿。",
+    "身体成直线，把胸口拉向桌子。",
+    "慢慢下放，脚跟着地。"
    ],
    "img": [
-    "ex/Reverse_Flyes/0.jpg",
-    "ex/Reverse_Flyes/1.jpg"
-   ]
-  },
-  {
-   "id": "Band_Pull_Apart",
-   "n": "弹力带拉开",
-   "en": "Band Pull Apart",
-   "eq": "bands",
-   "eqLabel": "弹力带",
-   "group": "背",
-   "target": "后肩/上背",
-   "steps": [
-    "双手拉弹力带在胸前。",
-    "向两侧拉开到肩宽以外。",
-    "慢慢回，保持肩胛收紧。"
-   ],
-   "img": [
-    "ex/Band_Pull_Apart/0.jpg",
-    "ex/Band_Pull_Apart/1.jpg"
-   ]
-  },
-  {
-   "id": "Back_Flyes_-_With_Bands",
-   "n": "弹力带反向飞鸟",
-   "en": "Back Flyes - With Bands",
-   "eq": "bands",
-   "eqLabel": "弹力带",
-   "group": "背",
-   "target": "后肩/上背",
-   "steps": [
-    "踩住或固定弹力带，屈髋俯身。",
-    "双手向两侧拉。",
-    "慢慢回，别耸肩。"
-   ],
-   "img": [
-    "ex/Back_Flyes_-_With_Bands/0.jpg",
-    "ex/Back_Flyes_-_With_Bands/1.jpg"
+    "ex/Bodyweight_Mid_Row/0.jpg",
+    "ex/Bodyweight_Mid_Row/1.jpg"
    ]
   },
   {
@@ -632,24 +398,6 @@
    ]
   },
   {
-   "id": "Dumbbell_Side_Bend",
-   "n": "哑铃侧屈",
-   "en": "Dumbbell Side Bend",
-   "eq": "dumbbell",
-   "eqLabel": "哑铃",
-   "group": "核心",
-   "target": "侧腹",
-   "steps": [
-    "站直，单手持哑铃。",
-    "向持铃侧屈，另一侧拉长。",
-    "慢慢回，换边。"
-   ],
-   "img": [
-    "ex/Dumbbell_Side_Bend/0.jpg",
-    "ex/Dumbbell_Side_Bend/1.jpg"
-   ]
-  },
-  {
    "id": "Mountain_Climbers",
    "n": "登山跑",
    "en": "Mountain Climbers",
@@ -665,6 +413,132 @@
    "img": [
     "ex/Mountain_Climbers/0.jpg",
     "ex/Mountain_Climbers/1.jpg"
+   ]
+  },
+  {
+   "id": "Air_Bike",
+   "n": "空中自行车",
+   "en": "Air Bike",
+   "eq": "body",
+   "eqLabel": "徒手",
+   "group": "核心",
+   "target": "腹/侧腹",
+   "steps": [
+    "仰卧，腰贴地，手放耳侧。",
+    "对侧肘碰膝，另一腿伸直。",
+    "交替进行，别拉脖子。"
+   ],
+   "img": [
+    "ex/Air_Bike/0.jpg",
+    "ex/Air_Bike/1.jpg"
+   ]
+  },
+  {
+   "id": "3_4_Sit-Up",
+   "n": "3/4 卷腹",
+   "en": "3/4 Sit-Up",
+   "eq": "body",
+   "eqLabel": "徒手",
+   "group": "核心",
+   "target": "腹直肌",
+   "steps": [
+    "仰卧屈膝，脚踩地。",
+    "卷起到肩胛离地约 3/4。",
+    "慢慢下，别完全躺平。"
+   ],
+   "img": [
+    "ex/3_4_Sit-Up/0.jpg",
+    "ex/3_4_Sit-Up/1.jpg"
+   ]
+  },
+  {
+   "id": "Leg_Pull-In",
+   "n": "屈膝收腹",
+   "en": "Leg Pull-In",
+   "eq": "body",
+   "eqLabel": "徒手",
+   "group": "核心",
+   "target": "下腹",
+   "steps": [
+    "仰卧，腿伸直。",
+    "屈膝把膝盖收向胸口。",
+    "慢慢伸腿回，腰别拱。"
+   ],
+   "img": [
+    "ex/Leg_Pull-In/0.jpg",
+    "ex/Leg_Pull-In/1.jpg"
+   ]
+  },
+  {
+   "id": "Oblique_Crunches",
+   "n": "侧腹卷腹",
+   "en": "Oblique Crunches",
+   "eq": "body",
+   "eqLabel": "徒手",
+   "group": "核心",
+   "target": "侧腹",
+   "steps": [
+    "仰卧屈膝，手放耳侧。",
+    "肩胛离地，向一侧膝方向卷。",
+    "换边，动作慢。"
+   ],
+   "img": [
+    "ex/Oblique_Crunches/0.jpg",
+    "ex/Oblique_Crunches/1.jpg"
+   ]
+  },
+  {
+   "id": "Toe_Touchers",
+   "n": "触脚卷腹",
+   "en": "Toe Touchers",
+   "eq": "body",
+   "eqLabel": "徒手",
+   "group": "核心",
+   "target": "腹直肌",
+   "steps": [
+    "仰卧，双腿伸直向上。",
+    "卷起肩胛，手去碰脚尖。",
+    "慢慢下，别甩。"
+   ],
+   "img": [
+    "ex/Toe_Touchers/0.jpg",
+    "ex/Toe_Touchers/1.jpg"
+   ]
+  },
+  {
+   "id": "Spider_Crawl",
+   "n": "蜘蛛爬",
+   "en": "Spider Crawl",
+   "eq": "body",
+   "eqLabel": "徒手",
+   "group": "核心",
+   "target": "核心/肩",
+   "steps": [
+    "俯卧撑姿势。",
+    "一膝向同侧肘靠近。",
+    "交替，髋别上下跳。"
+   ],
+   "img": [
+    "ex/Spider_Crawl/0.jpg",
+    "ex/Spider_Crawl/1.jpg"
+   ]
+  },
+  {
+   "id": "Inchworm",
+   "n": "毛毛虫",
+   "en": "Inchworm",
+   "eq": "body",
+   "eqLabel": "徒手",
+   "group": "全身",
+   "target": "肩/核心/腿",
+   "steps": [
+    "站姿俯身，手撑地。",
+    "手往前爬成平板。",
+    "脚走回手边，站起。"
+   ],
+   "img": [
+    "ex/Inchworm/0.jpg",
+    "ex/Inchworm/1.jpg"
    ]
   },
   {
@@ -704,57 +578,39 @@
    ]
   },
   {
-   "id": "Inchworm",
-   "n": "毛毛虫",
-   "en": "Inchworm",
+   "id": "Donkey_Calf_Raises",
+   "n": "驴式提踵",
+   "en": "Donkey Calf Raises",
+   "eq": "body",
+   "eqLabel": "椅子/台阶",
+   "group": "下肢/臀",
+   "target": "小腿",
+   "steps": [
+    "双手扶墙或椅子，身体前倾。",
+    "脚跟抬起，踮到最高。",
+    "慢慢落下，重复。"
+   ],
+   "img": [
+    "ex/Donkey_Calf_Raises/0.jpg",
+    "ex/Donkey_Calf_Raises/1.jpg"
+   ]
+  },
+  {
+   "id": "Cat_Stretch",
+   "n": "猫牛式",
+   "en": "Cat Stretch",
    "eq": "body",
    "eqLabel": "徒手",
-   "group": "全身",
-   "target": "肩/核心/腿",
+   "group": "拉伸",
+   "target": "脊柱",
    "steps": [
-    "站姿俯身，手撑地。",
-    "手往前爬成平板。",
-    "脚走回手边，站起。"
+    "四足跪姿。",
+    "吸气塌腰抬头。",
+    "呼气拱背低头。"
    ],
    "img": [
-    "ex/Inchworm/0.jpg",
-    "ex/Inchworm/1.jpg"
-   ]
-  },
-  {
-   "id": "Kettlebell_Thruster",
-   "n": "壶铃推举",
-   "en": "Kettlebell Thruster",
-   "eq": "kettlebell",
-   "eqLabel": "壶铃",
-   "group": "全身",
-   "target": "全身",
-   "steps": [
-    "壶铃架在肩前，下蹲。",
-    "站起的同时推过头。",
-    "慢慢回到架肩。"
-   ],
-   "img": [
-    "ex/Kettlebell_Thruster/0.jpg",
-    "ex/Kettlebell_Thruster/1.jpg"
-   ]
-  },
-  {
-   "id": "One-Arm_Kettlebell_Swings",
-   "n": "单臂壶铃摆动",
-   "en": "One-Arm Kettlebell Swings",
-   "eq": "kettlebell",
-   "eqLabel": "壶铃",
-   "group": "全身",
-   "target": "臀/腘绳肌",
-   "steps": [
-    "屈髋，壶铃在两腿间。",
-    "臀发力把壶铃摆到胸高。",
-    "让它自然回，别用手抬。"
-   ],
-   "img": [
-    "ex/One-Arm_Kettlebell_Swings/0.jpg",
-    "ex/One-Arm_Kettlebell_Swings/1.jpg"
+    "ex/Cat_Stretch/0.jpg",
+    "ex/Cat_Stretch/1.jpg"
    ]
   },
   {
@@ -794,6 +650,42 @@
    ]
   },
   {
+   "id": "Standing_Hip_Circles",
+   "n": "站姿髋环绕",
+   "en": "Standing Hip Circles",
+   "eq": "body",
+   "eqLabel": "徒手",
+   "group": "拉伸",
+   "target": "髋",
+   "steps": [
+    "站直，双手叉腰。",
+    "髋部画圈。",
+    "换方向，动作慢。"
+   ],
+   "img": [
+    "ex/Standing_Hip_Circles/0.jpg",
+    "ex/Standing_Hip_Circles/1.jpg"
+   ]
+  },
+  {
+   "id": "Knee_Circles",
+   "n": "膝关节环绕",
+   "en": "Knee Circles",
+   "eq": "body",
+   "eqLabel": "徒手",
+   "group": "拉伸",
+   "target": "膝",
+   "steps": [
+    "双脚并拢，微屈膝。",
+    "膝盖画小圈。",
+    "换方向，别太快。"
+   ],
+   "img": [
+    "ex/Knee_Circles/0.jpg",
+    "ex/Knee_Circles/1.jpg"
+   ]
+  },
+  {
    "id": "Hip_Circles_prone",
    "n": "俯卧髋部环绕",
    "en": "Hip Circles (prone)",
@@ -809,24 +701,6 @@
    "img": [
     "ex/Hip_Circles_prone/0.jpg",
     "ex/Hip_Circles_prone/1.jpg"
-   ]
-  },
-  {
-   "id": "Cat_Stretch",
-   "n": "猫牛式",
-   "en": "Cat Stretch",
-   "eq": "body",
-   "eqLabel": "徒手",
-   "group": "拉伸",
-   "target": "脊柱",
-   "steps": [
-    "四足跪姿。",
-    "吸气塌腰抬头。",
-    "呼气拱背低头。"
-   ],
-   "img": [
-    "ex/Cat_Stretch/0.jpg",
-    "ex/Cat_Stretch/1.jpg"
    ]
   }
  ]

@@ -1783,16 +1783,16 @@
 
   /* ================= 动作库（家用器械） ================= */
   let EXDB = null;
-  const EX_LIB_MAP = { squat: 'Bodyweight_Squat', pushup: 'Pushups', bridge: 'Butt_Lift_Bridge', lunge: 'Dumbbell_Lunges', plank: 'Plank', stepup: 'Dumbbell_Step_Ups', superman: 'Superman', deadbug: 'Dead_Bug', calf: 'Standing_Dumbbell_Calf_Raise' };
-  let exState = { group: '全部', eq: '全部', q: '' };
+  const EX_LIB_MAP = { squat: 'Bodyweight_Squat', pushup: 'Pushups', bridge: 'Butt_Lift_Bridge', lunge: 'Bodyweight_Walking_Lunge', plank: 'Plank', stepup: 'Step-up_with_Knee_Raise', superman: 'Superman', deadbug: 'Dead_Bug', calf: 'Donkey_Calf_Raises' };
+  let exState = { group: '全部', q: '' };
   const EX_GROUPS = ['全部', '下肢/臀', '胸/肩', '背', '核心', '全身', '拉伸'];
-  const EX_EQS = ['全部', '哑铃', '弹力带', '壶铃', '徒手'];
+  
 
   function renderExLibCard() {
     const el = $('#exLibCard'); if (!el) return;
     el.innerHTML = `<div class="card">
-      <h3><span>动作库</span><span class="more">46 个家用动作</span></h3>
-      <div class="hint">哑铃、弹力带、壶铃、徒手都有，点开有动作演示和步骤。</div>
+      <h3><span>动作库</span><span class="more">39 个徒手动作</span></h3>
+      <div class="hint">不用器械，在家一块垫子就能练；点开有动作演示和步骤。</div>
       <button class="btn ghost" id="btnExLib" style="margin-top:10px">打开动作库</button>
     </div>`;
     $('#btnExLib').onclick = openExLib;
@@ -1819,7 +1819,6 @@
     const q = exState.q.trim().toLowerCase();
     const list = (EXDB.items || []).filter(it => {
       if (exState.group !== '全部' && it.group !== exState.group) return false;
-      if (exState.eq !== '全部' && it.eqLabel.indexOf(exState.eq) < 0) return false;
       if (q && !(it.n + ' ' + it.en + ' ' + it.target).toLowerCase().includes(q)) return false;
       return true;
     });
@@ -1848,9 +1847,8 @@
       ov.id = 'exLib'; ov.className = 'exlib';
       ov.innerHTML = `<div class="exlib-top"><button id="exLibClose" aria-label="关闭">‹</button><div class="exlib-title">动作库</div><div id="exLibCount" class="exlib-count"></div></div>
         <div class="exlib-body">
-          <input class="search" id="exLibQ" placeholder="搜索：深蹲、划船、核心、哑铃">
+          <input class="search" id="exLibQ" placeholder="搜索：深蹲、核心、拉伸">
           <div class="exlib-chips" id="exGroup">${EX_GROUPS.map(g => `<button data-g="${g}" class="${g === '全部' ? 'on' : ''}">${g}</button>`).join('')}</div>
-          <div class="exlib-chips" id="exEq">${EX_EQS.map(e => `<button data-e="${e}" class="${e === '全部' ? 'on' : ''}">${e}</button>`).join('')}</div>
           <div class="exlib-grid" id="exGrid"><div class="empty">加载中…</div></div>
           <div class="exlib-foot">动作图片与数据：free-exercise-db（Public Domain）· 仅作演示，疼痛请停</div>
         </div>`;
@@ -1858,7 +1856,6 @@
       $('#exLibClose').onclick = () => { ov.classList.remove('on'); };
       $('#exLibQ').oninput = e => { exState.q = e.target.value; renderExGrid(); };
       $$('#exGroup button').forEach(b => b.onclick = () => { exState.group = b.dataset.g; $$('#exGroup button').forEach(x => x.classList.toggle('on', x === b)); renderExGrid(); });
-      $$('#exEq button').forEach(b => b.onclick = () => { exState.eq = b.dataset.e; $$('#exEq button').forEach(x => x.classList.toggle('on', x === b)); renderExGrid(); });
     }
     ov.classList.add('on');
     try { await loadExDB(); renderExGrid(); } catch (e) { const box = $('#exGrid'); if (box) box.innerHTML = '<div class="empty">动作库加载失败，检查网络后再试</div>'; }
