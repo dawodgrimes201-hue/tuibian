@@ -497,7 +497,7 @@
     return (!s || s === 'auto') ? (def || 'waves') : s;
   }
 
-  function startMorning() {
+  function startMorningAudio() {
     const m = WORKOUTS[plan.morning.wid];
     meta = { type: 'morning', wid: plan.morning.wid };
     openPlayer(m.title, plan.morning.wid, { mode: 'full', prog: 0 }, state.settings.music ? resolveSound(m.music) : null);
@@ -2214,6 +2214,67 @@
   function renderStatus() { hideV3('statusCard'); }
   function renderSixGrid() { hideV3('sixGrid'); }
   setInterval(() => { try { if ($('#hero') && $('#hero').innerHTML) renderHero(); } catch (e) {} }, 30000);
+
+
+  /* ================= 八段锦视频 ================= */
+  function startMorning() {
+    try { startBaduanjinVideo(); } catch (e) { startMorningAudio(); }
+  }
+  function startBaduanjinVideo() {
+    const old = $('#bdj'); if (old) old.remove();
+    const el = document.createElement('div'); el.id = 'bdj'; el.className = 'bdj';
+    el.innerHTML = `<div class="bdj-stage">
+      <video id="bdjVideo" src="baduanjin.mp4?v=20261026021000" poster="baduanjin.jpg" playsinline webkit-playsinline preload="metadata"></video>
+      <button class="bdj-x" id="bdjClose">✕</button>
+      <div class="bdj-cover" id="bdjCover">
+        <div class="bdj-kicker">MORNING · 12 MIN</div>
+        <div class="bdj-title">八段锦</div>
+        <div class="bdj-sub">跟着视频做，动作幅度以腰不痛为准</div>
+        <button class="bdj-start" id="bdjStart">开始跟练</button>
+        <div class="bdj-tip">中途可以暂停；做完自动打勾</div>
+      </div>
+      <div class="bdj-ui" id="bdjUI">
+        <div class="bdj-bar" id="bdjBarWrap"><i id="bdjBar"></i></div>
+        <div class="bdj-row"><span id="bdjTime">00:00 / 12:08</span><button class="bdj-pause" id="bdjPause">暂停</button></div>
+      </div>
+      <div class="bdj-outro" id="bdjOutro">
+        <div class="bdj-outro-ic">✓</div>
+        <div class="bdj-outro-t">八段锦完成</div>
+        <div class="bdj-outro-s">今天五件套已完成 1 件</div>
+        <button class="bdj-start" id="bdjDone">收下，继续今天</button>
+        <button class="bdj-replay" id="bdjReplay">再看一遍</button>
+      </div>
+    </div>`;
+    document.body.appendChild(el);
+    const v = $('#bdjVideo'), cover = $('#bdjCover'), ui = $('#bdjUI'), pause = $('#bdjPause'), bar = $('#bdjBar'), time = $('#bdjTime'), outro = $('#bdjOutro');
+    let finished = false;
+    const fmt = s => { s = Math.max(0, Math.floor(s || 0)); return pad2(Math.floor(s / 60)) + ':' + pad2(s % 60); };
+    const close = () => { try { v.pause(); } catch (e) {} releaseWake(); el.remove(); };
+    const markDone = () => { if (finished) return; finished = true; markFive('morning'); };
+    const toggle = () => {
+      if (v.paused) { v.play().catch(() => {}); pause.textContent = '暂停'; }
+      else { v.pause(); pause.textContent = '继续'; }
+    };
+    $('#bdjClose').onclick = close;
+    $('#bdjStart').onclick = () => {
+      cover.classList.add('hide'); ui.classList.add('on');
+      v.play().catch(() => { toast('点一下画面开始播放'); });
+      requestWake();
+    };
+    pause.onclick = (e) => { e.stopPropagation(); toggle(); };
+    v.onclick = toggle;
+    v.onended = () => { try { v.pause(); } catch (e) {} markDone(); outro.classList.add('on'); pause.textContent = '重播'; };
+    v.onerror = () => { close(); toast('视频加载失败，先用口令版'); startMorningAudio(); };
+    v.onloadedmetadata = () => { time.textContent = '00:00 / ' + fmt(v.duration); };
+    v.ontimeupdate = () => {
+      const p = v.duration ? v.currentTime / v.duration : 0;
+      bar.style.width = (p * 100) + '%';
+      time.textContent = fmt(v.currentTime) + ' / ' + fmt(v.duration);
+    };
+    $('#bdjBarWrap').onclick = (e) => { const r = e.currentTarget.getBoundingClientRect(); v.currentTime = (e.clientX - r.left) / r.width * (v.duration || 0); };
+    $('#bdjReplay').onclick = () => { outro.classList.remove('on'); try { v.currentTime = 0; v.play(); } catch (e) {} pause.textContent = '暂停'; };
+    $('#bdjDone').onclick = () => { markDone(); close(); };
+  }
 
   document.addEventListener('DOMContentLoaded', init);
   if (document.readyState !== 'loading') init();

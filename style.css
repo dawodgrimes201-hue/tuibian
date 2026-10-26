@@ -480,3 +480,28 @@ input[type="range"] { width: 100%; accent-color: var(--gold); }
 .v4-dietguide b{flex:none;width:38px;color:var(--gold);font-size:12px}
 .v4-dietguide span{color:var(--tx)}
 .ritual-manual{background:none;border:0;color:var(--dim);font-size:11px;padding:6px;text-decoration:underline;text-underline-offset:3px}
+
+/* ===== 八段锦视频 ===== */
+.bdj{position:fixed;inset:0;z-index:120;background:#000;display:flex;align-items:center;justify-content:center;animation:fadeIn .2s}
+.bdj-stage{position:relative;width:100%;height:100%;max-width:100vh;background:#000;overflow:hidden}
+#bdjVideo{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+.bdj-cover{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px;background:linear-gradient(180deg,rgba(4,7,12,.92),rgba(4,7,12,.78));backdrop-filter:blur(3px);transition:opacity .35s,visibility .35s}
+.bdj-cover.hide{opacity:0;visibility:hidden}
+.bdj-kicker{font-size:10px;letter-spacing:3px;color:#f0b429;margin-bottom:10px}
+.bdj-title{font-size:44px;text-shadow:0 4px 26px rgba(0,0,0,.6);font-weight:900;letter-spacing:4px;line-height:1.1;background:linear-gradient(135deg,#fff5d6,#f0b429);-webkit-background-clip:text;background-clip:text;color:transparent}
+.bdj-sub{font-size:13px;color:#d8c7a2;line-height:1.7;margin-top:10px;max-width:280px}
+.bdj-start{margin-top:26px;padding:15px 34px;border-radius:16px;background:linear-gradient(135deg,#f6c54e,#e9a51b);color:#1a1305;font-size:16px;font-weight:900;box-shadow:0 10px 30px rgba(240,180,41,.25)}
+.bdj-tip{font-size:10.5px;color:#7e879c;margin-top:14px}
+.bdj-ui{position:absolute;left:0;right:0;bottom:0;padding:18px 18px calc(22px + env(safe-area-inset-bottom));background:linear-gradient(0deg,rgba(0,0,0,.85),transparent);opacity:0;visibility:hidden;transition:.3s}
+.bdj-ui.on{opacity:1;visibility:visible}
+.bdj-x{position:fixed;right:16px;top:calc(14px + env(safe-area-inset-top));z-index:3;width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.18);color:#fff;font-size:14px}
+.bdj-bar{height:4px;border-radius:99px;background:rgba(255,255,255,.18);overflow:hidden;margin-bottom:12px;cursor:pointer}
+.bdj-bar i{display:block;height:100%;width:0;background:#f0b429;border-radius:99px;transition:width .15s linear}
+.bdj-row{display:flex;justify-content:space-between;align-items:center;color:#e7e9f2;font-size:12px;font-variant-numeric:tabular-nums}
+.bdj-pause{padding:10px 20px;border-radius:12px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);color:#fff;font-size:13px;font-weight:800;backdrop-filter:blur(10px)}
+.bdj-outro{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px;background:radial-gradient(80% 60% at 50% 40%,rgba(76,201,164,.16),rgba(4,7,12,.9) 70%);opacity:0;visibility:hidden;transition:.35s}
+.bdj-outro.on{opacity:1;visibility:visible}
+.bdj-outro-ic{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#4cc9a4,#f0b429);color:#101820;font-size:30px;font-weight:900;margin-bottom:16px}
+.bdj-outro-t{font-size:26px;font-weight:900;letter-spacing:2px}
+.bdj-outro-s{font-size:12px;color:#aeb7cc;margin-top:6px}
+.bdj-replay{margin-top:14px;padding:9px 16px;background:none;border:1px solid rgba(255,255,255,.16);border-radius:10px;color:#aeb7cc;font-size:12px}
