@@ -49,6 +49,7 @@ const TTS = {
 
   stop() {
     try { if (typeof Voice !== 'undefined') Voice.stop(); } catch (e) {}
+    try { if (typeof Music !== 'undefined') Music.unduck(); } catch (e) {}
     if (!this.supported) return;
     try { window.speechSynthesis.cancel(); } catch (e) {}
   },
@@ -60,13 +61,15 @@ const TTS = {
 
   async say(text, opt = {}) {
     if (!this.enabled || !text) return;
+    try { if (typeof Music !== 'undefined') Music.duck(); } catch (e) {}
     try {
       if (typeof Voice !== 'undefined' && Voice.ready && Voice.has(text)) {
         const ok = await Voice.play(text);
-        if (ok) return;
+        if (ok) return true;
       }
-    } catch (e) {}
-    return this.synth(text, opt);
+      return await this.synth(text, opt);
+    } catch (e) { return false; }
+    finally { try { if (typeof Music !== 'undefined') Music.unduck(); } catch (e) {} }
   },
 
   synth(text, opt = {}) {
@@ -125,18 +128,22 @@ const Beep = {
 /* ---------- 自然声（风 / 雨 / 海浪，实时合成，不用下载音频） ---------- */
 const Music = {
   playing: false,
-  mode: 'rain',
+  mode: 'none',
   master: null,
   nodes: [],
   timers: [],
   volume: 0.12,
   _noise: null,
+  _step: 0,
+  _next: 0,
+  _bpm: 124,
+  _ducked: false,
 
   ctx() { Beep.unlock(); return Beep.ctx; },
 
   noiseBuffer(ctx) {
     if (this._noise && this._noise.sampleRate === ctx.sampleRate) return this._noise;
-    const len = Math.floor(ctx.sampleRate * 2);
+    const len = Math.floor(ctx.sampleRate * 1.2);
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = buf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
@@ -144,107 +151,115 @@ const Music = {
     return buf;
   },
 
-  noiseLayer(out, opt) {
-    const ctx = this.ctx();
-    const src = ctx.createBufferSource();
-    src.buffer = this.noiseBuffer(ctx);
-    src.loop = true;
-    const f = ctx.createBiquadFilter();
-    f.type = opt.type || 'lowpass';
-    f.frequency.value = opt.freq || 500;
-    f.Q.value = opt.q == null ? 0.7 : opt.q;
-    const g = ctx.createGain();
-    g.gain.value = opt.gain || 0.2;
-    src.connect(f); f.connect(g); g.connect(out);
-    src.start();
-    this.nodes.push(src, f, g);
-    return { src, f, g };
-  },
-
-  lfo(param, rate, depth, base) {
-    const ctx = this.ctx();
-    const osc = ctx.createOscillator();
-    const amp = ctx.createGain();
-    osc.frequency.value = rate;
-    amp.gain.value = depth;
-    param.value = base;
-    osc.connect(amp); amp.connect(param);
-    osc.start();
-    this.nodes.push(osc, amp);
-    return osc;
-  },
-
   start(mode) {
     this.stop();
-    const ctx = this.ctx();
-    if (!ctx) return;
-    this.mode = mode || 'rain';
-    this.playing = true;
-    const master = ctx.createGain();
-    master.gain.value = 0;
-    master.connect(ctx.destination);
-    this.master = master;
-    master.gain.linearRampToValueAtTime(this.volume, ctx.currentTime + 2);
+    if (!mode || mode === 'none' || mode === 'off') return;
+    const map = { pulse: 'pulse', flow: 'flow', wind: 'pulse', waves: 'pulse', rain: 'flow', calm: 'flow' };
+    const m = map[mode] || 'pulse';
+    const ctx = this.ctx(); if (!ctx) return;
+    this.mode = m; this.playing = true; this._step = 0; this._ducked = false;
+    const master = ctx.createGain(); master.gain.value = 0;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.knee.value = 18; comp.ratio.value = 5; comp.attack.value = .01; comp.release.value = .25;
+    master.connect(comp); comp.connect(ctx.destination); this.master = master;
+    this._bpm = m === 'pulse' ? 124 : 82;
+    const target = this.volume * (m === 'pulse' ? 1 : .82);
+    master.gain.linearRampToValueAtTime(target, ctx.currentTime + 1.6);
+    this._next = ctx.currentTime + .08;
+    this.timers.push(setInterval(() => this._schedule(), 25));
+    this._schedule();
+  },
 
-    if (this.mode === 'rain') {
-      const hiss = this.noiseLayer(master, { type: 'highpass', freq: 1100, gain: 0.26 });
-      this.lfo(hiss.g.gain, 0.13, 0.05, 0.26);
-      this.noiseLayer(master, { type: 'lowpass', freq: 320, gain: 0.12 });
-      this.timers.push(setInterval(() => {
-        if (!this.playing) return;
-        if (Math.random() > 0.45) return;
-        try {
-          const c = this.ctx();
-          const t = c.currentTime;
-          const o = c.createOscillator();
-          const g = c.createGain();
-          o.type = 'sine';
-          o.frequency.value = 1200 + Math.random() * 1800;
-          g.gain.setValueAtTime(0.0001, t);
-          g.gain.linearRampToValueAtTime(0.04 + Math.random() * 0.03, t + 0.008);
-          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18 + Math.random() * 0.2);
-          o.connect(g); g.connect(master);
-          o.start(t); o.stop(t + 0.5);
-        } catch (e) {}
-      }, 220));
-    } else if (this.mode === 'wind') {
-      const band = this.noiseLayer(master, { type: 'bandpass', freq: 480, q: 1.1, gain: 0.22 });
-      this.lfo(band.f.frequency, 0.05, 220, 480);
-      this.lfo(band.g.gain, 0.07, 0.10, 0.20);
-      this.noiseLayer(master, { type: 'lowpass', freq: 180, gain: 0.10 });
-    } else { // waves
-      const body = this.noiseLayer(master, { type: 'lowpass', freq: 520, gain: 0.22 });
-      this.lfo(body.g.gain, 0.09, 0.14, 0.20);
-      const spray = this.noiseLayer(master, { type: 'highpass', freq: 2600, gain: 0.05 });
-      this.lfo(spray.g.gain, 0.09, 0.04, 0.05);
-      this.noiseLayer(master, { type: 'lowpass', freq: 140, gain: 0.08 });
+  _schedule() {
+    if (!this.playing) return;
+    const ctx = this.ctx(); if (!ctx) return;
+    while (this._next < ctx.currentTime + .16) {
+      this._scheduleStep(this._step, this._next);
+      this._next += (60 / this._bpm) / 4;
+      this._step = (this._step + 1) % 64;
     }
   },
 
-  stop() {
-    this.playing = false;
-    this.timers.forEach(t => clearInterval(t));
-    this.timers = [];
-    // 先摘出旧 master/nodes，延时清理只碰旧对象；否则会误杀下一次 start() 的新 master
-    const oldMaster = this.master, oldNodes = this.nodes.slice();
-    this.master = null; this.nodes = [];
-    try {
-      if (oldMaster && Beep.ctx) {
-        oldMaster.gain.cancelScheduledValues(Beep.ctx.currentTime);
-        oldMaster.gain.linearRampToValueAtTime(0.0001, Beep.ctx.currentTime + 1.2);
-      }
-    } catch (e) {}
-    clearTimeout(this._stopTimer);
-    this._stopTimer = setTimeout(() => {
-      oldNodes.forEach(n => { try { n.stop && n.stop(); } catch (e) {} });
-      try { oldMaster && oldMaster.disconnect(); } catch (e) {}
-    }, 1400);
+  _scheduleStep(step, t) {
+    const m = this.mode, s = step % 16, bar = Math.floor(step / 16);
+    const roots = [55, 43.65, 65.41, 49];
+    const chords = [[220, 261.63, 329.63], [174.61, 220, 261.63], [261.63, 329.63, 392], [196, 246.94, 293.66]];
+    if (m === 'pulse') {
+      if (s === 0 || s === 4 || s === 8 || s === 12) this._kick(t, 1);
+      if (s === 4 || s === 12) this._snare(t, .8);
+      if (s % 2 === 0) this._hat(t, s % 4 === 2 ? .5 : .28, .035);
+      if (s === 14) this._hat(t, .4, .16, true);
+      if (s % 2 === 0) this._bass(roots[bar % 4] * (s === 6 || s === 14 ? 2 : 1), t, .16, .32);
+      if (s === 0) this._pad(chords[bar % 4], t, (60 / this._bpm) * 4, .045);
+    } else {
+      if (s === 0 || s === 8) this._kick(t, .55);
+      if (s === 4 || s === 12) this._hat(t, .14, .06, true);
+      if (s === 0) this._bass(roots[bar % 4] / 2, t, (60 / this._bpm) * 3.6, .22);
+      if (s === 0) this._pad(chords[bar % 4].map(x => x / 2), t, (60 / this._bpm) * 4, .06);
+    }
   },
 
-  setVolume(v) {
-    this.volume = Math.max(0, Math.min(0.4, v));
-    try { if (this.master) this.master.gain.value = this.volume; } catch (e) {}
-  }
+  _kick(t, gain) {
+    try {
+      const c = this.ctx(), o = c.createOscillator(), g = c.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(46, t + .12);
+      g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(gain, t + .005); g.gain.exponentialRampToValueAtTime(.0001, t + .28);
+      o.connect(g); g.connect(this.master); o.start(t); o.stop(t + .32);
+    } catch (e) {}
+  },
+  _snare(t, gain) {
+    try {
+      const c = this.ctx(), n = c.createBufferSource(); n.buffer = this.noiseBuffer(c);
+      const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1750; f.Q.value = .8;
+      const g = c.createGain(); g.gain.setValueAtTime(gain * .5, t); g.gain.exponentialRampToValueAtTime(.0001, t + .18);
+      n.connect(f); f.connect(g); g.connect(this.master); n.start(t); n.stop(t + .2);
+      const o = c.createOscillator(), og = c.createGain(); o.type = 'triangle'; o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(120, t + .08);
+      og.gain.setValueAtTime(gain * .18, t); og.gain.exponentialRampToValueAtTime(.0001, t + .12);
+      o.connect(og); og.connect(this.master); o.start(t); o.stop(t + .14);
+    } catch (e) {}
+  },
+  _hat(t, gain, decay, open) {
+    try {
+      const c = this.ctx(), n = c.createBufferSource(); n.buffer = this.noiseBuffer(c);
+      const f = c.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = open ? 6500 : 8200;
+      const g = c.createGain(); g.gain.setValueAtTime(gain * .12, t); g.gain.exponentialRampToValueAtTime(.0001, t + (decay || .04));
+      n.connect(f); f.connect(g); g.connect(this.master); n.start(t); n.stop(t + (decay || .04) + .02);
+    } catch (e) {}
+  },
+  _bass(freq, t, dur, gain) {
+    try {
+      const c = this.ctx(), o = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain();
+      o.type = 'sawtooth'; o.frequency.value = freq;
+      f.type = 'lowpass'; f.frequency.setValueAtTime(420, t); f.frequency.exponentialRampToValueAtTime(150, t + dur);
+      g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(gain, t + .015); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+      o.connect(f); f.connect(g); g.connect(this.master); o.start(t); o.stop(t + dur + .02);
+    } catch (e) {}
+  },
+  _pad(notes, t, dur, gain) {
+    try {
+      const c = this.ctx();
+      notes.forEach((freq, i) => {
+        const o = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain();
+        o.type = 'sawtooth'; o.frequency.value = freq;
+        f.type = 'lowpass'; f.frequency.value = 900 + i * 120; f.Q.value = .6;
+        g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(gain, t + .35); g.gain.setValueAtTime(gain, t + Math.max(.4, dur - .35)); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+        o.connect(f); f.connect(g); g.connect(this.master); o.start(t); o.stop(t + dur + .05);
+      });
+    } catch (e) {}
+  },
+  duck() { this._ducked = true; try { if (this.master && Beep.ctx) this.master.gain.setTargetAtTime(this.volume * .28, Beep.ctx.currentTime, .08); } catch (e) {} },
+  unduck() { this._ducked = false; try { if (this.master && Beep.ctx) this.master.gain.setTargetAtTime(this.volume * (this.mode === 'pulse' ? 1 : .82), Beep.ctx.currentTime, .25); } catch (e) {} },
+
+  stop() {
+    this.playing = false;
+    this.timers.forEach(t => clearInterval(t)); this.timers = [];
+    const oldMaster = this.master, oldNodes = this.nodes.slice();
+    this.master = null; this.nodes = [];
+    try { if (oldMaster && Beep.ctx) { oldMaster.gain.cancelScheduledValues(Beep.ctx.currentTime); oldMaster.gain.linearRampToValueAtTime(.0001, Beep.ctx.currentTime + .35); } } catch (e) {}
+    clearTimeout(this._stopTimer);
+    this._stopTimer = setTimeout(() => { oldNodes.forEach(n => { try { n.stop && n.stop(); } catch (e) {} }); try { oldMaster && oldMaster.disconnect(); } catch (e) {} }, 500);
+  },
+  setVolume(v) { this.volume = Math.max(0, Math.min(.4, v)); try { if (this.master && Beep.ctx) this.master.gain.setTargetAtTime(this.volume * (this.mode === 'pulse' ? 1 : .82), Beep.ctx.currentTime, .1); } catch (e) {} }
 };
 
 /* ---------- 工具 ---------- */
