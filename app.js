@@ -2068,9 +2068,9 @@
 
   const WAIST_STEPS = [
     { t: '猫牛：慢慢拱背、塌腰', s: 60, img: ['ex/Cat_Stretch/0.jpg', 'ex/Cat_Stretch/1.jpg'] },
-    { t: '鸟狗：对侧手脚伸出去（示意）', s: 120, img: ['ex/Superman/0.jpg', 'ex/Superman/1.jpg'] },
-    { t: '死虫：腰贴地，对侧手脚', s: 120, img: ['ex/Dead_Bug/0.jpg', 'ex/Dead_Bug/1.jpg'] },
-    { t: '臀桥：臀发力，停 2 秒', s: 120, img: ['ex/Butt_Lift_Bridge/0.jpg', 'ex/Butt_Lift_Bridge/1.jpg'] },
+    { t: '鸟狗：对侧手脚伸出去', s: 120, motion: 'bird-dog', img: ['ex/Superman/0.jpg', 'ex/Superman/1.jpg'] },
+    { t: '死虫：腰贴地，对侧手脚', s: 120, motion: 'dead-bug', img: ['ex/Dead_Bug/0.jpg', 'ex/Dead_Bug/1.jpg'] },
+    { t: '臀桥：臀发力，停 2 秒', s: 120, motion: 'glute-bridge', img: ['ex/Butt_Lift_Bridge/0.jpg', 'ex/Butt_Lift_Bridge/1.jpg'] },
     { t: '髋屈肌拉伸：每侧 30 秒', s: 60, img: ['ex/Kneeling_Hip_Flexor/0.jpg', 'ex/Kneeling_Hip_Flexor/1.jpg'] },
     { t: '靠墙站：后脑、肩、臀贴墙（示意）', s: 120, img: ['ex/Standing_Pelvic_Tilt/0.jpg', 'ex/Standing_Pelvic_Tilt/1.jpg'] }
   ];
@@ -2126,11 +2126,25 @@
     </div>`;
     document.body.appendChild(el);
     const prog = $('#ritualProg'), time = $('#ritualTime'), demo = $('#ritualDemo'), stepBox = $('#ritualSteps');
-    let lastStep = -1;
-    const setDemo = (idx) => {
-      if (!steps[idx] || !steps[idx].img) { demo.classList.remove('on'); return; }
-      demo.classList.add('on');
+    let lastStep = -1, wmPlayer = null;
+    const showImages = (idx) => {
       demo.innerHTML = `<div class="rd-imgs"><figure><img src="${steps[idx].img[0]}" alt="起始"><span>起始</span></figure><figure><img src="${steps[idx].img[1]}" alt="结束"><span>结束</span></figure></div><div class="rd-cap">${esc(steps[idx].t)}</div>`;
+    };
+    const setDemo = (idx) => {
+      if (wmPlayer) { try { wmPlayer.destroy(); } catch (e) {} wmPlayer = null; }
+      const step = steps[idx];
+      if (!step) { demo.classList.remove('on'); return; }
+      demo.classList.add('on');
+      if (step.motion) {
+        demo.innerHTML = `<div class="rd-motion" id="rdMotion"></div><div class="rd-cap">${esc(step.t)}</div><div class="rd-credit">动画：workout-motion（个人非商业）</div>`;
+        const host = $('#rdMotion');
+        import('./wm/h2.js').then(m => {
+          if (lastStep !== idx || !document.body.contains(host)) return;
+          try { wmPlayer = m.createPlayer(host, step.motion, { autoplay: true, speed: .9 }); } catch (e) { showImages(idx); }
+        }).catch(() => showImages(idx));
+      } else if (step.img) {
+        showImages(idx);
+      }
       $$('.ritual-step', el).forEach((x, i) => x.classList.toggle('now', i === idx));
     };
     const currentStep = () => {
@@ -2151,7 +2165,7 @@
       sync();
     };
     draw();
-    const close = () => { clearInterval(timer); el.remove(); };
+    const close = () => { clearInterval(timer); if (wmPlayer) { try { wmPlayer.destroy(); } catch (e) {} } el.remove(); };
     $$('.ritual-step', el).forEach((x, i) => x.onclick = () => {
       let acc = 0; for (let j = 0; j < i; j++) acc += steps[j].s;
       seconds = total - acc; draw();
