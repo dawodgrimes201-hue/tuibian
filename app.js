@@ -2013,7 +2013,7 @@
       if (next.k === 'train') { switchTab('tab-train'); setTimeout(startTraining, 150); return; }
       if (next.k === 'morning') { startMorning(); return; }
       if (next.k === 'ai') { switchTab('tab-learn'); setTimeout(() => startAi(30), 200); return; }
-      if (next.k === 'waist') { openRitual('养腰 10 分钟', 10, 5, WAIST_STEPS, () => markFive('waist')); return; }
+      if (next.k === 'waist') { openRitual('养腰 10 分钟', 10, 5, WAIST_STEPS, () => markFive('waist'), undefined, true); return; }
     };
     $$('#hero [data-five]').forEach(el => el.onclick = (ev) => {
       if (ev.target.closest('[data-diet]')) return;
@@ -2022,7 +2022,7 @@
       if (k === 'train') { switchTab('tab-train'); setTimeout(startTraining, 120); return; }
       if (k === 'morning') { startMorning(); return; }
       if (k === 'ai') { switchTab('tab-learn'); setTimeout(() => startAi(30), 200); return; }
-      if (k === 'waist') { openRitual('养腰 10 分钟', 10, 5, WAIST_STEPS, () => markFive('waist')); return; }
+      if (k === 'waist') { openRitual('养腰 10 分钟', 10, 5, WAIST_STEPS, () => markFive('waist'), undefined, true); return; }
     });
     $$('#hero [data-diet]').forEach(b => b.onclick = (ev) => { ev.stopPropagation(); toggleDiet(b.dataset.diet); });
     const tt = $('#v4ToTrain'); if (tt) tt.onclick = () => switchTab('tab-train');
@@ -2067,12 +2067,12 @@
   }
 
   const WAIST_STEPS = [
-    { t: '猫牛：慢慢拱背、塌腰', s: 60, img: ['ex/Cat_Stretch/0.jpg', 'ex/Cat_Stretch/1.jpg'] },
-    { t: '鸟狗：对侧手脚伸出去', s: 120, motion: 'bird-dog', img: ['ex/Superman/0.jpg', 'ex/Superman/1.jpg'] },
-    { t: '死虫：腰贴地，对侧手脚', s: 120, motion: 'dead-bug', img: ['ex/Dead_Bug/0.jpg', 'ex/Dead_Bug/1.jpg'] },
-    { t: '臀桥：臀发力，停 2 秒', s: 120, motion: 'glute-bridge', img: ['ex/Butt_Lift_Bridge/0.jpg', 'ex/Butt_Lift_Bridge/1.jpg'] },
-    { t: '髋屈肌拉伸：每侧 30 秒', s: 60, img: ['ex/Kneeling_Hip_Flexor/0.jpg', 'ex/Kneeling_Hip_Flexor/1.jpg'] },
-    { t: '靠墙站：后脑、肩、臀贴墙（示意）', s: 120, img: ['ex/Standing_Pelvic_Tilt/0.jpg', 'ex/Standing_Pelvic_Tilt/1.jpg'] }
+    { t: '猫牛：慢慢拱背、塌腰', s: 60, say: '先热身，猫牛，一分钟。', img: ['ex/Cat_Stretch/0.jpg', 'ex/Cat_Stretch/1.jpg'] },
+    { t: '鸟狗：对侧手脚伸出去', s: 120, say: '鸟狗，二 组，每组 三十 秒，每侧。对侧手脚伸出，腰不动，停两秒。', motion: 'bird-dog', img: ['ex/Superman/0.jpg', 'ex/Superman/1.jpg'] },
+    { t: '死虫：腰贴地，对侧手脚', s: 120, say: '死虫，三 组，每组 四十 秒。腰贴地，对侧手脚慢慢伸出，腰一离地就缩小幅度。', motion: 'dead-bug', img: ['ex/Dead_Bug/0.jpg', 'ex/Dead_Bug/1.jpg'] },
+    { t: '臀桥：臀发力，停 2 秒', s: 120, say: '臀桥，三 组，每组 四十 秒。脚跟发力顶髋，顶住一秒，别用腰顶。', motion: 'glute-bridge', img: ['ex/Butt_Lift_Bridge/0.jpg', 'ex/Butt_Lift_Bridge/1.jpg'] },
+    { t: '髋屈肌拉伸：每侧 30 秒', s: 60, say: '髋屈肌拉伸，每侧三十秒。骨盆微微后倾，感觉大腿前侧拉长。', img: ['ex/Kneeling_Hip_Flexor/0.jpg', 'ex/Kneeling_Hip_Flexor/1.jpg'] },
+    { t: '靠墙站：后脑、肩、臀贴墙（示意）', s: 120, say: '靠墙站，九十 秒。', img: ['ex/Standing_Pelvic_Tilt/0.jpg', 'ex/Standing_Pelvic_Tilt/1.jpg'] }
   ];
   function markFive(k) {
     const c = check(); c.done[k] = Date.now(); save(); renderAll();
@@ -2113,9 +2113,9 @@
     setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 600); }, 3400);
   }
 
-  function openRitual(title, targetMin, minMin, steps, onDone, preset) {
+  function openRitual(title, targetMin, minMin, steps, onDone, preset, voiceOn) {
     const old = $('#ritual'); if (old) old.remove();
-    let seconds = (preset || targetMin) * 60, total = seconds, timer = null, running = false, finished = false;
+    let seconds = (preset || targetMin) * 60, total = seconds, timer = null, running = false, finished = false, started = false;
     const el = document.createElement('div'); el.id = 'ritual'; el.className = 'ritual';
     el.innerHTML = `<div class="ritual-card">
       <div class="ritual-head"><button class="ritual-x" id="ritualClose">✕</button><div><b>${esc(title)}</b><span>${targetMin} 分钟 · 最低 ${minMin} 分钟</span></div></div>
@@ -2147,6 +2147,11 @@
       }
       $$('.ritual-step', el).forEach((x, i) => x.classList.toggle('now', i === idx));
     };
+    const speakStep = (idx) => {
+      if (!voiceOn || !TTS.enabled) return;
+      const step = steps[idx]; if (!step) return;
+      try { TTS.stop(); TTS.say(step.say || step.t); } catch (e) {}
+    };
     const currentStep = () => {
       const elapsed = Math.max(0, total - seconds);
       let acc = 0;
@@ -2154,7 +2159,7 @@
       return steps.length - 1;
     };
     const sync = () => {
-      const idx = currentStep(); if (idx !== lastStep) { lastStep = idx; setDemo(idx); }
+      const idx = currentStep(); if (idx !== lastStep) { lastStep = idx; setDemo(idx); if (started) speakStep(idx); }
     };
     const draw = () => {
       time.textContent = `${pad2(Math.floor(Math.max(0, seconds) / 60))}:${pad2(Math.max(0, seconds) % 60)}`;
@@ -2165,20 +2170,21 @@
       sync();
     };
     draw();
-    const close = () => { clearInterval(timer); if (wmPlayer) { try { wmPlayer.destroy(); } catch (e) {} } el.remove(); };
+    const close = () => { clearInterval(timer); if (wmPlayer) { try { wmPlayer.destroy(); } catch (e) {} } try { TTS.stop(); } catch (e) {} el.remove(); };
     $$('.ritual-step', el).forEach((x, i) => x.onclick = () => {
       let acc = 0; for (let j = 0; j < i; j++) acc += steps[j].s;
       seconds = total - acc; draw();
     });
     $('#ritualClose').onclick = close;
     const start = (mins) => {
-      clearInterval(timer); seconds = mins * 60; total = seconds; running = true; $('#ritualStart').textContent = '暂停'; draw();
+      clearInterval(timer); seconds = mins * 60; total = seconds; running = true; started = true; $('#ritualStart').textContent = '暂停'; draw();
+      if (voiceOn && TTS.enabled) { try { TTS.unlock(); TTS.say('准备好了就开始，跟着屏幕上的时间做。').then(() => { if (started) speakStep(currentStep()); }); } catch (e) {} }
       timer = setInterval(() => {
         if (!running) return; seconds--; draw();
         if (seconds <= 0) { clearInterval(timer); if (!finished) { finished = true; beep(); onDone && onDone(); close(); toast('完成，记下了'); } }
       }, 1000);
     };
-    $('#ritualStart').onclick = () => { if (!running) start(Math.ceil(seconds / 60)); else { running = false; $('#ritualStart').textContent = '继续'; } };
+    $('#ritualStart').onclick = () => { if (!running) start(Math.ceil(seconds / 60)); else { running = false; $('#ritualStart').textContent = '继续'; try { TTS.stop(); } catch (e) {} } };
     $('#ritualMin').onclick = () => start(minMin);
     $('#ritualDone').onclick = () => { if (finished) return; finished = true; onDone && onDone(); close(); toast('记下了'); };
   }
