@@ -1344,9 +1344,9 @@
     const done = !!c.done.train;
     const moves = [];
     (w.blocks || []).forEach(b => {
-      if (b.k === 'ex') { const ex = EX[b.ex]; const lib = EX_LIB_MAP[b.ex]; moves.push(`<div class="mv"><div class="n">${esc(ex.n)}</div><div class="s">${b.sets} 组 × ${b.secs} 秒 · 休 ${b.rest} 秒${b.sides ? ' ×2 侧' : ''}</div><div class="cue">${esc(ex.cue)}</div>${lib ? `<button class="exlook" data-lib="${lib}">看演示</button>` : ''}</div>`); }
+      if (b.k === 'ex') { const ex = EX[b.ex]; const lib = EX_LIB_MAP[b.ex]; moves.push(`<div class="mv ${lib ? 'has-demo' : ''}"><div class="n">${esc(ex.n)}</div><div class="s">${b.sets} 组 × ${b.secs} 秒 · 休 ${b.rest} 秒${b.sides ? ' ×2 侧' : ''}</div><div class="cue">${esc(ex.cue)}</div>${lib ? `<div class="mvdemo"><img src="ex/${lib}/0.jpg" alt="" loading="lazy"><img class="f1" src="ex/${lib}/1.jpg" alt="" loading="lazy"><button class="exlook" data-lib="${lib}">动作要点</button></div>` : ''}</div>`); }
       else if (b.k === 'walk') moves.push(`<div class="mv"><div class="n">${esc(b.name)}</div><div class="s">${Math.round(b.secs / 60)} 分钟</div></div>`);
-      else if (b.k === 'warmup' || b.k === 'cool') { const ex = EX[b.ex]; const lib = EX_LIB_MAP[b.ex]; moves.push(`<div class="mv"><div class="n">${esc(b.name || ex.n)}</div><div class="s">${b.secs >= 60 ? Math.round(b.secs / 60) + ' 分钟' : b.secs + ' 秒'}</div>${lib ? `<button class="exlook" data-lib="${lib}">看演示</button>` : ''}</div>`); }
+      else if (b.k === 'warmup' || b.k === 'cool') { const ex = EX[b.ex]; const lib = EX_LIB_MAP[b.ex]; moves.push(`<div class="mv ${lib ? 'has-demo' : ''}"><div class="n">${esc(b.name || ex.n)}</div><div class="s">${b.secs >= 60 ? Math.round(b.secs / 60) + ' 分钟' : b.secs + ' 秒'}</div>${lib ? `<div class="mvdemo"><img src="ex/${lib}/0.jpg" alt="" loading="lazy"><img class="f1" src="ex/${lib}/1.jpg" alt="" loading="lazy"><button class="exlook" data-lib="${lib}">动作要点</button></div>` : ''}</div>`); }
     });
     const logs = (state.workoutLog || {})[today] || [];
     const hist = (state.sessions || []).slice(-7).reverse().map(s => { const ww = WORKOUTS[s.wid] || {}; return `<div class="kv"><span>${esc(s.date.slice(5))}</span><span>${esc(ww.title || s.wid)}</span></div>`; }).join('') || '<div class="empty">还没有训练记录</div>';
@@ -1370,7 +1370,7 @@
     <div class="card"><h3><span>晨间八段锦</span><span class="more">约 ${plan.morning.minutes} 分钟</span></h3><div class="hint">八式，每式约一分钟，跟着口令和呼吸做。早上做最好，晚上放松也行。</div><button class="btn ghost" id="btnMorning2" style="margin-top:10px">开始八段锦</button></div>
     <div class="card"><h3><span>最近训练</span></h3>${hist}</div>`;
     const bt = $('#btnTrainStart'); if (bt) bt.onclick = startTraining;
-    $$('#trainCard [data-lib]').forEach(b => b.onclick = async () => { await openExLib(); showExDetail(b.dataset.lib); });
+    $$('#trainCard [data-lib]').forEach(b => b.onclick = () => openExDemo(b.dataset.lib));
     $('#btnRest').onclick = () => openTimer(90);
     $('#btnLog').onclick = openTrainLog;
     const bm = $('#btnMorning2'); if (bm) bm.onclick = startMorning;
@@ -1863,6 +1863,7 @@
     try { await loadExDB(); renderExGrid(); } catch (e) { const box = $('#exGrid'); if (box) box.innerHTML = '<div class="empty">动作库加载失败，检查网络后再试</div>'; }
   }
 
+  function openExDemo(id) { loadExDB().then(() => showExDetail(id)).catch(() => toast('动作演示加载失败')); }
   setTimeout(renderExLibCard, 900);
 
 
@@ -2066,12 +2067,12 @@
   }
 
   const WAIST_STEPS = [
-    { t: '猫牛：慢慢拱背、塌腰', s: 60 },
-    { t: '鸟狗：对侧手脚伸出去', s: 120 },
-    { t: '死虫：腰贴地，对侧手脚', s: 120 },
-    { t: '臀桥：臀发力，停 2 秒', s: 120 },
-    { t: '髋屈肌拉伸：每侧 30 秒', s: 60 },
-    { t: '靠墙站：后脑、肩、臀贴墙', s: 120 }
+    { t: '猫牛：慢慢拱背、塌腰', s: 60, img: ['ex/Cat_Stretch/0.jpg', 'ex/Cat_Stretch/1.jpg'] },
+    { t: '鸟狗：对侧手脚伸出去（示意）', s: 120, img: ['ex/Superman/0.jpg', 'ex/Superman/1.jpg'] },
+    { t: '死虫：腰贴地，对侧手脚', s: 120, img: ['ex/Dead_Bug/0.jpg', 'ex/Dead_Bug/1.jpg'] },
+    { t: '臀桥：臀发力，停 2 秒', s: 120, img: ['ex/Butt_Lift_Bridge/0.jpg', 'ex/Butt_Lift_Bridge/1.jpg'] },
+    { t: '髋屈肌拉伸：每侧 30 秒', s: 60, img: ['ex/Kneeling_Hip_Flexor/0.jpg', 'ex/Kneeling_Hip_Flexor/1.jpg'] },
+    { t: '靠墙站：后脑、肩、臀贴墙（示意）', s: 120, img: ['ex/Standing_Pelvic_Tilt/0.jpg', 'ex/Standing_Pelvic_Tilt/1.jpg'] }
   ];
   function markFive(k) {
     const c = check(); c.done[k] = Date.now(); save(); renderAll();
@@ -2118,21 +2119,43 @@
     const el = document.createElement('div'); el.id = 'ritual'; el.className = 'ritual';
     el.innerHTML = `<div class="ritual-card">
       <div class="ritual-head"><button class="ritual-x" id="ritualClose">✕</button><div><b>${esc(title)}</b><span>${targetMin} 分钟 · 最低 ${minMin} 分钟</span></div></div>
+      <div class="ritual-demo" id="ritualDemo"></div>
       <div class="ritual-ringwrap"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="84" class="rtrack"/><circle cx="100" cy="100" r="84" class="rprog" id="ritualProg"/></svg><div class="ritual-time" id="ritualTime">${pad2(Math.floor(seconds / 60))}:${pad2(seconds % 60)}</div></div>
       <div class="ritual-steps" id="ritualSteps">${steps.map((s, i) => `<div class="ritual-step" data-s="${i}"><i>${i + 1}</i><span>${esc(s.t)}</span><em>${Math.round(s.s / 60)}′</em></div>`).join('')}</div>
       <div class="ritual-btns"><button class="v4-main-btn" id="ritualStart">开始</button><button class="v4-ghost" id="ritualMin">只做最低 ${minMin} 分钟</button><button class="ritual-manual" id="ritualDone">已经做完了，直接打勾</button></div>
     </div>`;
     document.body.appendChild(el);
-    const prog = $('#ritualProg'), time = $('#ritualTime');
+    const prog = $('#ritualProg'), time = $('#ritualTime'), demo = $('#ritualDemo'), stepBox = $('#ritualSteps');
+    let lastStep = -1;
+    const setDemo = (idx) => {
+      if (!steps[idx] || !steps[idx].img) { demo.classList.remove('on'); return; }
+      demo.classList.add('on');
+      demo.innerHTML = `<div class="rd-imgs"><figure><img src="${steps[idx].img[0]}" alt="起始"><span>起始</span></figure><figure><img src="${steps[idx].img[1]}" alt="结束"><span>结束</span></figure></div><div class="rd-cap">${esc(steps[idx].t)}</div>`;
+      $$('.ritual-step', el).forEach((x, i) => x.classList.toggle('now', i === idx));
+    };
+    const currentStep = () => {
+      const elapsed = Math.max(0, total - seconds);
+      let acc = 0;
+      for (let i = 0; i < steps.length; i++) { acc += steps[i].s; if (elapsed < acc) return i; }
+      return steps.length - 1;
+    };
+    const sync = () => {
+      const idx = currentStep(); if (idx !== lastStep) { lastStep = idx; setDemo(idx); }
+    };
     const draw = () => {
       time.textContent = `${pad2(Math.floor(Math.max(0, seconds) / 60))}:${pad2(Math.max(0, seconds) % 60)}`;
       const p = total ? Math.max(0, seconds) / total : 0;
       const C = 2 * Math.PI * 84;
       prog.style.strokeDasharray = C;
       prog.style.strokeDashoffset = C * (1 - p);
+      sync();
     };
     draw();
     const close = () => { clearInterval(timer); el.remove(); };
+    $$('.ritual-step', el).forEach((x, i) => x.onclick = () => {
+      let acc = 0; for (let j = 0; j < i; j++) acc += steps[j].s;
+      seconds = total - acc; draw();
+    });
     $('#ritualClose').onclick = close;
     const start = (mins) => {
       clearInterval(timer); seconds = mins * 60; total = seconds; running = true; $('#ritualStart').textContent = '暂停'; draw();
