@@ -1,5 +1,5 @@
 /* 蜕变 · Service Worker（网络优先，更新立即生效；语音长期缓存） */
-const VERSION = 'tb-offline-20261026024500';
+const VERSION = 'tb-offline-20261026025500';
 const CACHE_SHELL = VERSION;
 const CACHE_AUDIO = 'tb-audio-v1';
 const SHELL = ['./', 'index.html', 'style.css', 'data.js', 'coach.js', 'rules.js', 'voice.js', 'app.js',
