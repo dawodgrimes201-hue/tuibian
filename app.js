@@ -500,7 +500,7 @@
   function startMorningAudio() {
     const m = WORKOUTS[plan.morning.wid];
     meta = { type: 'morning', wid: plan.morning.wid };
-    openPlayer(m.title, plan.morning.wid, { mode: 'full', prog: 0 }, state.settings.music ? resolveSound(m.music) : null);
+    openPlayer(m.title, plan.morning.wid, { mode: 'full', prog: 0 }, null);
   }
 
   function startSleep() {
